@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════════
-   Hangman Online – Client App
+   Hangman Online – Client App v3
    ══════════════════════════════════════════════════════════════ */
 
 // ─── i18n Translations ───────────────────────────────────────
@@ -48,7 +48,17 @@ const i18n = {
     roomFull: 'Room is full!',
     copied: 'Copied!',
     opponentJoined: 'Opponent joined! 🎮',
-    langSwitch: 'عربي'
+    langSwitch: 'عربي',
+    chat: '💬 Chat',
+    chatPlaceholder: 'Type a message...',
+    connected: 'Connected',
+    waiting: 'Waiting',
+    waitingDots: '...',
+    round: 'Round',
+    opponentDisconnected: 'Opponent disconnected. Waiting to reconnect...',
+    opponentReconnected: 'Opponent reconnected! 🎮',
+    wordLangError: 'Please type using the correct language!',
+    wordNoNumbers: 'Numbers are not allowed!'
   },
   ar: {
     title: 'المشنقة',
@@ -94,7 +104,17 @@ const i18n = {
     roomFull: 'الغرفة مليانة!',
     copied: 'تم النسخ!',
     opponentJoined: 'الخصم دخل! 🎮',
-    langSwitch: 'English'
+    langSwitch: 'English',
+    chat: '💬 الشات',
+    chatPlaceholder: 'اكتب رسالة...',
+    connected: 'متصل',
+    waiting: 'مستني',
+    waitingDots: '...',
+    round: 'الجولة',
+    opponentDisconnected: 'الخصم اتقطع. مستنيه يرجع...',
+    opponentReconnected: 'الخصم رجع! 🎮',
+    wordLangError: 'اكتب باللغة الصح!',
+    wordNoNumbers: 'مينفعش تكتب أرقام!'
   }
 };
 
@@ -103,16 +123,55 @@ const KEYS_EN = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 const KEYS_AR = [
   'ا','ب','ت','ث','ج','ح','خ','د','ذ','ر','ز',
   'س','ش','ص','ض','ط','ظ','ع','غ','ف','ق',
-  'ك','ل','م','ن','ه','و','ي','ة','ء','أ','إ','آ','ؤ','ئ'
+  'ك','ل','م','ن','ه','و','ي','ة','ء'
 ];
+
+// ─── Arabic Normalization (client-side mirror of server) ─────
+function normalizeArabic(text) {
+  return text
+    .replaceAll(/[أإآٱ]/g, 'ا')
+    .replaceAll(/ى/g, 'ي')
+    .replaceAll(/[\u064B-\u065F\u0670]/g, '');
+}
+
+// ─── Word Validation ─────────────────────────────────────────
+function isArabicOnly(text) {
+  // Allow Arabic letters, spaces, and Arabic-specific chars
+  return /^[\u0600-\u06FF\s]+$/.test(text);
+}
+
+function isEnglishOnly(text) {
+  return /^[a-zA-Z\s]+$/.test(text);
+}
+
+function hasNumbers(text) {
+  return /\d/.test(text);
+}
+
+// ─── Session Persistence ─────────────────────────────────────
+function saveSession(roomCode, playerName, role) {
+  sessionStorage.setItem('hangman_session', JSON.stringify({ roomCode, playerName, role }));
+}
+
+function getSession() {
+  try {
+    const data = sessionStorage.getItem('hangman_session');
+    return data ? JSON.parse(data) : null;
+  } catch { return null; }
+}
+
+function clearSession() {
+  sessionStorage.removeItem('hangman_session');
+}
 
 // ─── State ───────────────────────────────────────────────────
 let currentLang = 'en';
-let currentRole = null; // 'setter' | 'guesser'
+let currentRole = null;
 let currentRoomCode = null;
 let gameLang = 'en';
 let opponentName = '';
 let playerName = '';
+let chatOpen = false;
 
 // ─── DOM Refs ────────────────────────────────────────────────
 const $ = (sel) => document.querySelector(sel);
@@ -129,27 +188,18 @@ const screens = {
 const socket = io();
 
 // ─── Helpers ─────────────────────────────────────────────────
-function t(key) {
-  return i18n[currentLang][key] || key;
-}
+function t(key) { return i18n[currentLang][key] || key; }
 
 function applyI18n() {
-  $$('[data-i18n]').forEach(el => {
-    el.textContent = t(el.dataset.i18n);
-  });
-  $$('[data-i18n-placeholder]').forEach(el => {
-    el.placeholder = t(el.dataset.i18nPlaceholder);
-  });
+  $$('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  $$('[data-i18n-placeholder]').forEach(el => { el.placeholder = t(el.dataset.i18nPlaceholder); });
   $('#lang-label').textContent = t('langSwitch');
-
   const html = document.documentElement;
   if (currentLang === 'ar') {
-    html.setAttribute('dir', 'rtl');
-    html.setAttribute('lang', 'ar');
+    html.setAttribute('dir', 'rtl'); html.setAttribute('lang', 'ar');
     document.body.style.fontFamily = 'var(--font-ar)';
   } else {
-    html.setAttribute('dir', 'ltr');
-    html.setAttribute('lang', 'en');
+    html.setAttribute('dir', 'ltr'); html.setAttribute('lang', 'en');
     document.body.style.fontFamily = 'var(--font-en)';
   }
 }
@@ -158,8 +208,16 @@ function showScreen(name) {
   Object.values(screens).forEach(s => s.classList.remove('active'));
   screens[name].classList.add('active');
   screens[name].style.animation = 'none';
-  screens[name].offsetHeight; // trigger reflow
+  screens[name].offsetHeight;
   screens[name].style.animation = '';
+
+  if (name === 'game') {
+    $('#chat-toggle-btn').classList.remove('hidden');
+    $('#header-scores').classList.remove('hidden');
+  } else {
+    $('#chat-toggle-btn').classList.add('hidden');
+    if (name !== 'setWord') $('#header-scores').classList.add('hidden');
+  }
 }
 
 function showToast(msg, type = '') {
@@ -174,6 +232,28 @@ function showToast(msg, type = '') {
 function hideAllOverlays() {
   $('#game-over-overlay').classList.add('hidden');
   $('#opponent-left-overlay').classList.add('hidden');
+}
+
+// ─── Scores ──────────────────────────────────────────────────
+function updateScoreDisplay(scores) {
+  if (!scores || scores.length < 2) return;
+  $('#score-p1-name').textContent = scores[0].name;
+  $('#score-p1-val').textContent = scores[0].score;
+  $('#score-p2-name').textContent = scores[1].name;
+  $('#score-p2-val').textContent = scores[1].score;
+  $('#header-scores').classList.remove('hidden');
+}
+
+function renderGameOverScores(scores) {
+  const container = $('#go-scores');
+  container.innerHTML = '';
+  if (!scores) return;
+  scores.forEach(s => {
+    const div = document.createElement('div');
+    div.className = 'go-score-item';
+    div.innerHTML = `<span class="go-score-name">${s.name}</span><span class="go-score-val">${s.score}</span>`;
+    container.appendChild(div);
+  });
 }
 
 // ─── Hangman Parts ───────────────────────────────────────────
@@ -199,12 +279,8 @@ function showHangmanPart(index) {
 function renderWord(maskedWord) {
   const container = $('#word-display');
   container.innerHTML = '';
-  // Set RTL direction for Arabic words
-  if (gameLang === 'ar') {
-    container.style.direction = 'rtl';
-  } else {
-    container.style.direction = 'ltr';
-  }
+  container.style.direction = gameLang === 'ar' ? 'rtl' : 'ltr';
+
   maskedWord.forEach((ch, i) => {
     const slot = document.createElement('div');
     slot.className = 'letter-slot';
@@ -213,8 +289,6 @@ function renderWord(maskedWord) {
     } else if (ch !== '_') {
       slot.textContent = ch;
       slot.classList.add('revealed');
-    } else {
-      slot.textContent = '';
     }
     slot.dataset.index = i;
     container.appendChild(slot);
@@ -234,8 +308,9 @@ function updateWord(maskedWord) {
 }
 
 function revealFullWord(word) {
+  const normalized = gameLang === 'ar' ? normalizeArabic(word) : word;
   const slots = $$('.letter-slot');
-  word.split('').forEach((ch, i) => {
+  normalized.split('').forEach((ch, i) => {
     if (i < slots.length && ch !== ' ') {
       slots[i].textContent = ch;
       if (!slots[i].classList.contains('revealed')) {
@@ -246,8 +321,8 @@ function revealFullWord(word) {
 }
 
 // ─── Keyboard ────────────────────────────────────────────────
-function renderKeyboard(lang) {
-  const container = $('#keyboard');
+function renderKeyboard(lang, containerId = '#keyboard') {
+  const container = $(containerId);
   container.innerHTML = '';
   const keys = lang === 'ar' ? KEYS_AR : KEYS_EN;
   keys.forEach(key => {
@@ -255,7 +330,9 @@ function renderKeyboard(lang) {
     btn.className = 'key-btn';
     btn.textContent = key;
     btn.dataset.letter = key.toLowerCase();
-    btn.addEventListener('click', () => onKeyPress(key.toLowerCase(), btn));
+    if (containerId === '#keyboard') {
+      btn.addEventListener('click', () => onKeyPress(key.toLowerCase(), btn));
+    }
     container.appendChild(btn);
   });
 }
@@ -266,6 +343,74 @@ function onKeyPress(letter, btn) {
   socket.emit('guess-letter', { letter });
 }
 
+function updateSetterKeyboard(letter, isCorrect) {
+  const setterKeys = $$('#setter-keyboard .key-btn');
+  setterKeys.forEach(btn => {
+    if (btn.dataset.letter === letter) {
+      btn.classList.add('used', isCorrect ? 'correct' : 'wrong');
+    }
+  });
+}
+
+// Restore keyboard state from guessedLetters array
+function restoreKeyboardState(guessedLetters, word, containerId = '#keyboard') {
+  const container = $(containerId);
+  if (!container) return;
+  const buttons = container.querySelectorAll('.key-btn');
+  buttons.forEach(btn => {
+    const letter = btn.dataset.letter;
+    if (guessedLetters.includes(letter)) {
+      const isCorrect = word.includes(letter);
+      btn.classList.add('used', isCorrect ? 'correct' : 'wrong');
+    }
+  });
+}
+
+// ─── Chat ────────────────────────────────────────────────────
+function addChatMessage(sender, text, isMe) {
+  const container = $('#chat-messages');
+  const bubble = document.createElement('div');
+  bubble.className = `chat-bubble ${isMe ? 'me' : 'other'}`;
+
+  if (!isMe) {
+    const nameEl = document.createElement('div');
+    nameEl.className = 'chat-sender';
+    nameEl.textContent = sender;
+    bubble.appendChild(nameEl);
+  }
+
+  const textEl = document.createElement('div');
+  textEl.textContent = text;
+  bubble.appendChild(textEl);
+
+  container.appendChild(bubble);
+  container.scrollTop = container.scrollHeight;
+}
+
+$('#btn-send-chat').addEventListener('click', sendChat);
+$('#chat-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') sendChat();
+});
+
+function sendChat() {
+  const input = $('#chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  socket.emit('chat-msg', { text });
+  addChatMessage(playerName, text, true);
+  input.value = '';
+}
+
+$('#chat-toggle-btn').addEventListener('click', () => {
+  chatOpen = !chatOpen;
+  const panel = $('#chat-panel');
+  if (chatOpen) {
+    panel.classList.add('mobile-open');
+  } else {
+    panel.classList.remove('mobile-open');
+  }
+});
+
 // ─── Screen: Home ────────────────────────────────────────────
 $('#lang-toggle').addEventListener('click', () => {
   currentLang = currentLang === 'en' ? 'ar' : 'en';
@@ -274,10 +419,7 @@ $('#lang-toggle').addEventListener('click', () => {
 
 $('#btn-create').addEventListener('click', () => {
   playerName = $('#player-name').value.trim();
-  if (!playerName) {
-    $('#home-error').textContent = t('nameMissing');
-    return;
-  }
+  if (!playerName) { $('#home-error').textContent = t('nameMissing'); return; }
   $('#home-error').textContent = '';
   socket.emit('create-room', { playerName, lang: currentLang });
 });
@@ -285,28 +427,18 @@ $('#btn-create').addEventListener('click', () => {
 $('#btn-join').addEventListener('click', () => {
   playerName = $('#player-name').value.trim();
   const code = $('#room-code-input').value.trim();
-  if (!playerName) {
-    $('#home-error').textContent = t('nameMissing');
-    return;
-  }
-  if (!code) {
-    $('#home-error').textContent = t('codeMissing');
-    return;
-  }
+  if (!playerName) { $('#home-error').textContent = t('nameMissing'); return; }
+  if (!code) { $('#home-error').textContent = t('codeMissing'); return; }
   $('#home-error').textContent = '';
   socket.emit('join-room', { roomCode: code, playerName });
 });
 
-$('#room-code-input').addEventListener('input', (e) => {
-  e.target.value = e.target.value.toUpperCase();
-});
+$('#room-code-input').addEventListener('input', (e) => { e.target.value = e.target.value.toUpperCase(); });
 
 // ─── Screen: Lobby ───────────────────────────────────────────
 $('#btn-copy-code').addEventListener('click', () => {
   if (currentRoomCode) {
-    navigator.clipboard.writeText(currentRoomCode).then(() => {
-      showToast(t('copied'), 'success');
-    });
+    navigator.clipboard.writeText(currentRoomCode).then(() => showToast(t('copied'), 'success'));
   }
 });
 
@@ -321,10 +453,22 @@ $$('.lang-btn').forEach(btn => {
 
 $('#btn-set-word').addEventListener('click', () => {
   const word = $('#custom-word').value.trim();
-  if (!word) {
-    showToast(t('wordMissing'), 'error');
+  if (!word) { showToast(t('wordMissing'), 'error'); return; }
+
+  // Validate language
+  if (hasNumbers(word)) {
+    showToast(t('wordNoNumbers'), 'error');
     return;
   }
+  if (gameLang === 'ar' && !isArabicOnly(word)) {
+    showToast(t('wordLangError'), 'error');
+    return;
+  }
+  if (gameLang === 'en' && !isEnglishOnly(word)) {
+    showToast(t('wordLangError'), 'error');
+    return;
+  }
+
   const hint = $('#custom-hint').value.trim();
   socket.emit('set-word', { word, hint, useRandom: false, lang: gameLang });
 });
@@ -334,71 +478,66 @@ $('#btn-random-word').addEventListener('click', () => {
 });
 
 // ─── Screen: Game Over ───────────────────────────────────────
-$('#btn-play-again').addEventListener('click', () => {
-  hideAllOverlays();
-  socket.emit('play-again');
-});
-
-$('#btn-go-home').addEventListener('click', () => {
-  hideAllOverlays();
-  location.reload();
-});
-
-$('#btn-left-home').addEventListener('click', () => {
-  hideAllOverlays();
-  location.reload();
-});
+$('#btn-play-again').addEventListener('click', () => { hideAllOverlays(); socket.emit('play-again'); });
+$('#btn-go-home').addEventListener('click', () => { hideAllOverlays(); clearSession(); location.reload(); });
+$('#btn-left-home').addEventListener('click', () => { hideAllOverlays(); clearSession(); location.reload(); });
 
 // ─── Socket Events ───────────────────────────────────────────
 
-// Room created
 socket.on('room-created', ({ code, role }) => {
   currentRoomCode = code;
   currentRole = role;
+  saveSession(code, playerName, role);
   $('#lobby-code').textContent = code;
+  $('#lobby-p1-name').textContent = playerName;
   showScreen('lobby');
 });
 
-// Room joined (as guesser)
-socket.on('room-joined', ({ code, role, opponentName: oppName, lang }) => {
+socket.on('room-joined', ({ code, role, opponentName: oppName, lang, scores }) => {
   currentRoomCode = code;
   currentRole = role;
   opponentName = oppName;
   currentLang = lang;
+  saveSession(code, playerName, role);
   applyI18n();
-  // Wait for game to start
+  if (scores) updateScoreDisplay(scores);
   showScreen('lobby');
   $('#lobby-code').textContent = code;
   $('#lobby-title').textContent = t('lobbyWaiting');
+  $('#lobby-p1-name').textContent = playerName;
+  $('#lobby-p2-name').textContent = oppName;
+  $('#lobby-p2').querySelector('.lp-avatar').textContent = '👤';
+  $('#lobby-p2-status').textContent = t('connected');
+  $('#lobby-p2-status').className = 'lp-status connected';
 });
 
-// Opponent joined (setter receives this)
-socket.on('opponent-joined', ({ opponentName: oppName }) => {
+socket.on('opponent-joined', ({ opponentName: oppName, scores }) => {
   opponentName = oppName;
   showToast(t('opponentJoined'), 'success');
+  if (scores) updateScoreDisplay(scores);
+  $('#lobby-p2-name').textContent = oppName;
+  $('#lobby-p2').querySelector('.lp-avatar').textContent = '👤';
+  $('#lobby-p2-status').textContent = t('connected');
+  $('#lobby-p2-status').className = 'lp-status connected';
 });
 
-// Setter should set word
-socket.on('set-word-prompt', () => {
+socket.on('set-word-prompt', ({ roundNumber }) => {
   $('#custom-word').value = '';
   $('#custom-hint').value = '';
-  // Use room language, not UI language
-  const roomLang = currentLang || 'en';
-  gameLang = roomLang;
-  $$('.lang-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.lang === gameLang);
-  });
+  gameLang = currentLang || 'en';
+  $$('.lang-btn').forEach(b => b.classList.toggle('active', b.dataset.lang === gameLang));
+  if (roundNumber) $('#round-badge').textContent = `${t('round')} ${roundNumber}`;
   showScreen('setWord');
 });
 
-// Game started (guesser)
-socket.on('game-started', ({ maskedWord, hint, lang }) => {
+socket.on('game-started', ({ maskedWord, hint, lang, roundNumber }) => {
   gameLang = lang;
   showScreen('game');
   hideAllOverlays();
+  $('#chat-messages').innerHTML = '';
 
   $('#role-badge').textContent = t('roleGuesser');
-  $('#opponent-name-display').textContent = opponentName;
+  $('#game-round-label').textContent = `${t('round')} ${roundNumber || 1}`;
   $('#hint-text').textContent = hint;
   $('#lives-count').textContent = '6';
   $('#setter-view').classList.add('hidden');
@@ -409,14 +548,14 @@ socket.on('game-started', ({ maskedWord, hint, lang }) => {
   renderKeyboard(lang);
 });
 
-// Game started (setter)
-socket.on('game-started-setter', ({ word, hint, lang }) => {
+socket.on('game-started-setter', ({ word, hint, lang, roundNumber, maskedWord }) => {
   gameLang = lang;
   showScreen('game');
   hideAllOverlays();
+  $('#chat-messages').innerHTML = '';
 
   $('#role-badge').textContent = t('roleSetter');
-  $('#opponent-name-display').textContent = opponentName;
+  $('#game-round-label').textContent = `${t('round')} ${roundNumber || 1}`;
   $('#hint-text').textContent = hint;
   $('#lives-count').textContent = '6';
   $('#setter-view').classList.remove('hidden');
@@ -424,40 +563,33 @@ socket.on('game-started-setter', ({ word, hint, lang }) => {
   $('#keyboard').classList.add('hidden');
 
   resetHangman();
-
-  const maskedWord = word.split('').map(ch => ch === ' ' ? ' ' : '_');
   renderWord(maskedWord);
+  renderKeyboard(lang, '#setter-keyboard');
 });
 
-// Guess result
-socket.on('guess-result', ({ letter, isCorrect, maskedWord, wrongGuesses, guessedLetters, gameOver, winner, word }) => {
-  // Update word
+socket.on('guess-result', ({ letter, isCorrect, maskedWord, wrongGuesses, guessedLetters, gameOver, winner, word, scores }) => {
   updateWord(maskedWord);
 
-  // Update keyboard
-  const keyBtn = Array.from($$('.key-btn')).find(b => b.dataset.letter === letter);
+  // Update guesser keyboard
+  const keyBtn = Array.from($$('#keyboard .key-btn')).find(b => b.dataset.letter === letter);
   if (keyBtn) {
-    keyBtn.classList.add('used');
-    keyBtn.classList.add(isCorrect ? 'correct' : 'wrong');
+    keyBtn.classList.add('used', isCorrect ? 'correct' : 'wrong');
   }
 
-  // Update lives
+  // Update setter keyboard
+  updateSetterKeyboard(letter, isCorrect);
+
   const lives = 6 - wrongGuesses;
   $('#lives-count').textContent = lives;
 
-  // Show hangman part
-  if (!isCorrect) {
-    showHangmanPart(wrongGuesses - 1);
-  }
+  if (!isCorrect) showHangmanPart(wrongGuesses - 1);
+  if (scores) updateScoreDisplay(scores);
 
-  // Game over
   if (gameOver) {
     setTimeout(() => {
       if (word) revealFullWord(word);
-
       const overlay = $('#game-over-overlay');
       overlay.classList.remove('hidden');
-
       const isGuesserWin = winner === 'guesser';
 
       if (currentRole === 'guesser') {
@@ -469,14 +601,16 @@ socket.on('guess-result', ({ letter, isCorrect, maskedWord, wrongGuesses, guesse
       }
 
       $('#go-word').innerHTML = `${t('theWord')} <strong>${word}</strong>`;
+      renderGameOverScores(scores);
     }, 600);
   }
 });
 
-// New round (after play again)
-socket.on('new-round', ({ role }) => {
+socket.on('new-round', ({ role, scores, roundNumber }) => {
   currentRole = role;
+  saveSession(currentRoomCode, playerName, role);
   hideAllOverlays();
+  if (scores) updateScoreDisplay(scores);
   if (role === 'setter') {
     // will receive set-word-prompt
   } else {
@@ -485,28 +619,133 @@ socket.on('new-round', ({ role }) => {
   }
 });
 
-// Opponent left
+socket.on('chat-msg', ({ sender, text }) => {
+  if (sender !== playerName) {
+    addChatMessage(sender, text, false);
+  }
+});
+
+socket.on('opponent-disconnected', ({ opponentName: name }) => {
+  showToast(t('opponentDisconnected'), 'error');
+});
+
+socket.on('opponent-reconnected', ({ opponentName: name }) => {
+  showToast(t('opponentReconnected'), 'success');
+});
+
 socket.on('opponent-left', () => {
+  clearSession();
   $('#opponent-left-overlay').classList.remove('hidden');
 });
 
-// Error
 socket.on('error-msg', ({ msg }) => {
-  const errorTexts = {
-    'room-not-found': t('roomNotFound'),
-    'room-full': t('roomFull')
-  };
+  const errorTexts = { 'room-not-found': t('roomNotFound'), 'room-full': t('roomFull') };
   showToast(errorTexts[msg] || msg, 'error');
   $('#home-error').textContent = errorTexts[msg] || msg;
+});
+
+// ─── Rejoin Handling ─────────────────────────────────────────
+socket.on('rejoin-success', (state) => {
+  currentRoomCode = state.code;
+  currentRole = state.role;
+  opponentName = state.opponentName || '';
+  currentLang = state.lang || 'en';
+  applyI18n();
+
+  if (state.scores) updateScoreDisplay(state.scores);
+
+  const phase = state.phase;
+  const game = state.game;
+
+  if (phase === 'waiting' || phase === 'setting-word') {
+    if (state.role === 'setter') {
+      gameLang = currentLang || 'en';
+      $$('.lang-btn').forEach(b => b.classList.toggle('active', b.dataset.lang === gameLang));
+      if (state.roundNumber) $('#round-badge').textContent = `${t('round')} ${state.roundNumber}`;
+      showScreen('setWord');
+    } else {
+      showScreen('lobby');
+      $('#lobby-code').textContent = state.code;
+      $('#lobby-p1-name').textContent = playerName;
+      if (opponentName) {
+        $('#lobby-p2-name').textContent = opponentName;
+        $('#lobby-p2').querySelector('.lp-avatar').textContent = '👤';
+        $('#lobby-p2-status').textContent = t('connected');
+        $('#lobby-p2-status').className = 'lp-status connected';
+      }
+      $('#lobby-title').textContent = t('lobbyWaiting');
+    }
+  } else if (phase === 'playing' || phase === 'finished') {
+    gameLang = game.lang || 'en';
+    showScreen('game');
+    hideAllOverlays();
+    $('#chat-messages').innerHTML = '';
+    $('#hint-text').textContent = game.hint;
+    $('#lives-count').textContent = String(6 - game.wrongGuesses);
+    $('#game-round-label').textContent = `${t('round')} ${state.roundNumber || 1}`;
+
+    resetHangman();
+    for (let i = 0; i < game.wrongGuesses; i++) {
+      showHangmanPart(i);
+    }
+
+    renderWord(game.maskedWord);
+
+    if (state.role === 'guesser') {
+      $('#role-badge').textContent = t('roleGuesser');
+      $('#setter-view').classList.add('hidden');
+      $('#keyboard').classList.remove('hidden');
+      renderKeyboard(game.lang);
+      // Restore keyboard state
+      const normalizedWord = game.maskedWord.filter(c => c !== ' ' && c !== '_').join('');
+      restoreKeyboardState(game.guessedLetters, game.maskedWord.join(''), '#keyboard');
+    } else {
+      $('#role-badge').textContent = t('roleSetter');
+      $('#setter-view').classList.remove('hidden');
+      $('#setter-word-text').textContent = game.displayWord || '';
+      $('#keyboard').classList.add('hidden');
+      renderKeyboard(game.lang, '#setter-keyboard');
+      restoreKeyboardState(game.guessedLetters, game.maskedWord.join(''), '#setter-keyboard');
+    }
+
+    if (phase === 'finished') {
+      setTimeout(() => {
+        if (game.word) revealFullWord(game.word);
+        const overlay = $('#game-over-overlay');
+        overlay.classList.remove('hidden');
+        const isGuesserWin = game.winner === 'guesser';
+
+        if (currentRole === 'guesser') {
+          $('#go-title').textContent = isGuesserWin ? t('youWin') : t('youLose');
+          $('#go-icon').textContent = isGuesserWin ? '🎉' : '😵';
+        } else {
+          $('#go-title').textContent = isGuesserWin ? t('guesserWon') : t('setterWon');
+          $('#go-icon').textContent = isGuesserWin ? '😬' : '🎉';
+        }
+
+        $('#go-word').innerHTML = `${t('theWord')} <strong>${game.word}</strong>`;
+        renderGameOverScores(state.scores);
+      }, 300);
+    }
+  }
+
+  showToast(t('opponentReconnected').replace('Opponent', 'You'), 'success');
+  console.log('[Rejoin] Successfully rejoined room', state.code);
+});
+
+socket.on('rejoin-failed', () => {
+  clearSession();
+  console.log('[Rejoin] Failed — session expired');
 });
 
 // ─── Physical Keyboard Support ───────────────────────────────
 document.addEventListener('keydown', (e) => {
   if (currentRole !== 'guesser') return;
   if (!screens.game.classList.contains('active')) return;
+  if (document.activeElement === $('#chat-input')) return;
 
   const letter = e.key.toLowerCase();
-  const keyBtn = Array.from($$('.key-btn')).find(b => b.dataset.letter === letter);
+  const keyBtn = Array.from($$('#keyboard .key-btn')).find(b => b.dataset.letter === letter);
   if (keyBtn && !keyBtn.classList.contains('used')) {
     onKeyPress(letter, keyBtn);
   }
@@ -514,3 +753,14 @@ document.addEventListener('keydown', (e) => {
 
 // ─── Init ────────────────────────────────────────────────────
 applyI18n();
+
+// Try to rejoin if we have a saved session
+const savedSession = getSession();
+if (savedSession) {
+  playerName = savedSession.playerName;
+  currentRole = savedSession.role;
+  socket.emit('rejoin-room', {
+    roomCode: savedSession.roomCode,
+    playerName: savedSession.playerName
+  });
+}

@@ -18,6 +18,18 @@
         <span class="logo-icon">☠️</span>
         <span class="logo-text" data-i18n="title">Hangman</span>
       </div>
+      <!-- Score display in header during game -->
+      <div id="header-scores" class="header-scores hidden">
+        <div class="score-pill">
+          <span id="score-p1-name" class="score-name">P1</span>
+          <span id="score-p1-val" class="score-val">0</span>
+        </div>
+        <span class="score-divider">—</span>
+        <div class="score-pill">
+          <span id="score-p2-name" class="score-name">P2</span>
+          <span id="score-p2-val" class="score-val">0</span>
+        </div>
+      </div>
       <button id="lang-toggle" class="btn-icon" title="Switch Language">
         <span id="lang-label">عربي</span>
       </button>
@@ -74,13 +86,40 @@
     <!-- ── LOBBY SCREEN ── -->
     <section id="screen-lobby" class="screen">
       <div class="lobby-container glass">
-        <div class="lobby-icon">⏳</div>
-        <h2 id="lobby-title" data-i18n="lobbyWaiting">Waiting for opponent...</h2>
+        <div class="lobby-header-area">
+          <div class="lobby-icon-animated">
+            <div class="lobby-ring"></div>
+            <span class="lobby-icon-inner">🎮</span>
+          </div>
+          <h2 id="lobby-title" data-i18n="lobbyWaiting">Waiting for opponent...</h2>
+        </div>
+
         <div class="room-code-display">
           <span data-i18n="roomCode">Room Code</span>
           <div class="code-box" id="lobby-code">----</div>
           <button id="btn-copy-code" class="btn btn-sm" data-i18n="copyCode">Copy</button>
         </div>
+
+        <div class="lobby-players">
+          <div class="lobby-player-card glass" id="lobby-p1">
+            <div class="lp-avatar">👤</div>
+            <div class="lp-info">
+              <span class="lp-name" id="lobby-p1-name">You</span>
+              <span class="lp-status connected" data-i18n="connected">Connected</span>
+            </div>
+          </div>
+
+          <div class="lobby-vs">VS</div>
+
+          <div class="lobby-player-card glass" id="lobby-p2">
+            <div class="lp-avatar">❓</div>
+            <div class="lp-info">
+              <span class="lp-name" id="lobby-p2-name" data-i18n="waitingDots">...</span>
+              <span class="lp-status waiting" id="lobby-p2-status" data-i18n="waiting">Waiting</span>
+            </div>
+          </div>
+        </div>
+
         <p class="lobby-hint" data-i18n="lobbyHint">Share this code with your friend!</p>
       </div>
     </section>
@@ -88,6 +127,7 @@
     <!-- ── SET WORD SCREEN ── -->
     <section id="screen-set-word" class="screen">
       <div class="set-word-container glass">
+        <div class="round-badge" id="round-badge">Round 1</div>
         <h2 data-i18n="setWordTitle">Choose a Word</h2>
         <p class="card-desc" data-i18n="setWordDesc">Pick a word for your opponent to guess</p>
 
@@ -108,53 +148,68 @@
 
     <!-- ── GAME SCREEN ── -->
     <section id="screen-game" class="screen">
-      <div class="game-top-bar">
-        <div class="player-info">
-          <span class="badge" id="role-badge">Guesser</span>
-          <span class="vs-label">vs</span>
-          <span class="opponent-name" id="opponent-name-display">Opponent</span>
+      <div class="game-layout">
+        <!-- Main game area -->
+        <div class="game-main">
+          <div class="game-top-bar">
+            <div class="player-info">
+              <span class="badge" id="role-badge">Guesser</span>
+              <span class="round-label" id="game-round-label">Round 1</span>
+            </div>
+            <div class="wrong-counter" id="wrong-counter">
+              <span class="heart">❤️</span> <span id="lives-count">6</span>
+            </div>
+          </div>
+
+          <!-- Hangman SVG -->
+          <div class="hangman-area">
+            <svg id="hangman-svg" viewBox="0 0 200 220">
+              <line x1="20" y1="210" x2="80" y2="210" stroke="var(--clr-gallows)" stroke-width="4" stroke-linecap="round"/>
+              <line x1="50" y1="210" x2="50" y2="30" stroke="var(--clr-gallows)" stroke-width="4" stroke-linecap="round"/>
+              <line x1="50" y1="30" x2="130" y2="30" stroke="var(--clr-gallows)" stroke-width="4" stroke-linecap="round"/>
+              <line x1="130" y1="30" x2="130" y2="55" stroke="var(--clr-gallows)" stroke-width="4" stroke-linecap="round"/>
+              <circle id="hm-head" cx="130" cy="72" r="17" stroke="var(--clr-body)" stroke-width="3" fill="none" class="hm-part hidden"/>
+              <line id="hm-body" x1="130" y1="89" x2="130" y2="140" stroke="var(--clr-body)" stroke-width="3" stroke-linecap="round" class="hm-part hidden"/>
+              <line id="hm-larm" x1="130" y1="100" x2="105" y2="125" stroke="var(--clr-body)" stroke-width="3" stroke-linecap="round" class="hm-part hidden"/>
+              <line id="hm-rarm" x1="130" y1="100" x2="155" y2="125" stroke="var(--clr-body)" stroke-width="3" stroke-linecap="round" class="hm-part hidden"/>
+              <line id="hm-lleg" x1="130" y1="140" x2="108" y2="175" stroke="var(--clr-body)" stroke-width="3" stroke-linecap="round" class="hm-part hidden"/>
+              <line id="hm-rleg" x1="130" y1="140" x2="152" y2="175" stroke="var(--clr-body)" stroke-width="3" stroke-linecap="round" class="hm-part hidden"/>
+            </svg>
+          </div>
+
+          <!-- Hint -->
+          <div class="hint-area">
+            <span class="hint-label" data-i18n="hintLabel">Hint:</span>
+            <span id="hint-text" class="hint-text"></span>
+          </div>
+
+          <!-- Word Display -->
+          <div id="word-display" class="word-display"></div>
+
+          <!-- Keyboard (for guesser) -->
+          <div id="keyboard" class="keyboard"></div>
+
+          <!-- Setter watching view with keyboard feedback -->
+          <div id="setter-view" class="setter-view hidden">
+            <p data-i18n="setterWatching">Watching your opponent guess...</p>
+            <div class="setter-word">
+              <span data-i18n="yourWord">Your word:</span>
+              <strong id="setter-word-text"></strong>
+            </div>
+            <div id="setter-keyboard" class="keyboard setter-keyboard"></div>
+          </div>
         </div>
-        <div class="wrong-counter" id="wrong-counter">
-          <span class="heart">❤️</span> <span id="lives-count">6</span>
-        </div>
-      </div>
 
-      <!-- Hangman SVG -->
-      <div class="hangman-area">
-        <svg id="hangman-svg" viewBox="0 0 200 220">
-          <!-- Gallows -->
-          <line x1="20" y1="210" x2="80" y2="210" stroke="var(--clr-gallows)" stroke-width="4" stroke-linecap="round"/>
-          <line x1="50" y1="210" x2="50" y2="30" stroke="var(--clr-gallows)" stroke-width="4" stroke-linecap="round"/>
-          <line x1="50" y1="30" x2="130" y2="30" stroke="var(--clr-gallows)" stroke-width="4" stroke-linecap="round"/>
-          <line x1="130" y1="30" x2="130" y2="55" stroke="var(--clr-gallows)" stroke-width="4" stroke-linecap="round"/>
-          <!-- Body parts (hidden by default) -->
-          <circle id="hm-head" cx="130" cy="72" r="17" stroke="var(--clr-body)" stroke-width="3" fill="none" class="hm-part hidden"/>
-          <line id="hm-body" x1="130" y1="89" x2="130" y2="140" stroke="var(--clr-body)" stroke-width="3" stroke-linecap="round" class="hm-part hidden"/>
-          <line id="hm-larm" x1="130" y1="100" x2="105" y2="125" stroke="var(--clr-body)" stroke-width="3" stroke-linecap="round" class="hm-part hidden"/>
-          <line id="hm-rarm" x1="130" y1="100" x2="155" y2="125" stroke="var(--clr-body)" stroke-width="3" stroke-linecap="round" class="hm-part hidden"/>
-          <line id="hm-lleg" x1="130" y1="140" x2="108" y2="175" stroke="var(--clr-body)" stroke-width="3" stroke-linecap="round" class="hm-part hidden"/>
-          <line id="hm-rleg" x1="130" y1="140" x2="152" y2="175" stroke="var(--clr-body)" stroke-width="3" stroke-linecap="round" class="hm-part hidden"/>
-        </svg>
-      </div>
-
-      <!-- Hint -->
-      <div class="hint-area">
-        <span class="hint-label" data-i18n="hintLabel">Hint:</span>
-        <span id="hint-text" class="hint-text"></span>
-      </div>
-
-      <!-- Word Display -->
-      <div id="word-display" class="word-display"></div>
-
-      <!-- Keyboard -->
-      <div id="keyboard" class="keyboard"></div>
-
-      <!-- Setter watching view -->
-      <div id="setter-view" class="setter-view hidden">
-        <p data-i18n="setterWatching">Watching your opponent guess...</p>
-        <div class="setter-word">
-          <span data-i18n="yourWord">Your word:</span>
-          <strong id="setter-word-text"></strong>
+        <!-- Chat sidebar -->
+        <div class="chat-panel glass" id="chat-panel">
+          <div class="chat-header">
+            <span class="chat-title" data-i18n="chat">💬 Chat</span>
+          </div>
+          <div class="chat-messages" id="chat-messages"></div>
+          <div class="chat-input-area">
+            <input type="text" id="chat-input" maxlength="200" placeholder="" data-i18n-placeholder="chatPlaceholder" autocomplete="off" />
+            <button id="btn-send-chat" class="btn-chat-send">➤</button>
+          </div>
         </div>
       </div>
     </section>
@@ -165,6 +220,7 @@
         <div id="go-icon" class="go-icon">🎉</div>
         <h2 id="go-title">You Win!</h2>
         <p id="go-word" class="go-word"></p>
+        <div class="go-scores" id="go-scores"></div>
         <button id="btn-play-again" class="btn btn-primary" data-i18n="playAgain">Play Again</button>
         <button id="btn-go-home" class="btn btn-secondary" data-i18n="goHome">Back to Home</button>
       </div>
@@ -183,6 +239,9 @@
 
   <!-- ── Toast Notifications ── -->
   <div id="toast-container"></div>
+
+  <!-- ── Mobile chat toggle ── -->
+  <button id="chat-toggle-btn" class="chat-toggle-btn hidden">💬</button>
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="app.js"></script>

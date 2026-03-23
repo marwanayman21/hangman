@@ -28,9 +28,18 @@ function getRandomWord(lang) {
   return list[Math.floor(Math.random() * list.length)];
 }
 
+// ─── Arabic Letter Normalization ─────────────────────────────────────
+function normalizeArabic(text) {
+  return text
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/[\u064B-\u065F\u0670]/g, '');
+}
+
 function createGameState() {
   return {
     word: '',
+    displayWord: '',
     hint: '',
     lang: 'en',
     guessedLetters: [],
@@ -40,18 +49,100 @@ function createGameState() {
   };
 }
 
+// Helper: get full room state for a player (used for rejoin)
+function getRoomStateForPlayer(room, player) {
+  const otherPlayer = room.players.find(p => p.id !== player.id);
+  const scores = room.players.map(p => ({ name: p.name, score: p.score }));
+  const maskedWord = room.game.word ? room.game.word.split('').map(ch => {
+    if (ch === ' ') return ' ';
+    return room.game.guessedLetters.includes(ch) ? ch : '_';
+  }) : [];
+
+  return {
+    code: room.code,
+    role: player.role,
+    opponentName: otherPlayer ? otherPlayer.name : null,
+    lang: room.lang,
+    scores,
+    phase: room.game.phase,
+    roundNumber: room.roundNumber,
+    game: {
+      maskedWord,
+      hint: room.game.hint,
+      lang: room.game.lang,
+      wrongGuesses: room.game.wrongGuesses,
+      guessedLetters: room.game.guessedLetters,
+      displayWord: player.role === 'setter' ? room.game.displayWord : null,
+      winner: room.game.winner,
+      word: room.game.phase === 'finished' ? room.game.displayWord : null
+    }
+  };
+}
+
 // ─── Socket.IO Events ───────────────────────────────────────────────
 io.on('connection', (socket) => {
   console.log(`[+] Connected: ${socket.id}`);
+
+  // ── Rejoin Room ──
+  socket.on('rejoin-room', ({ roomCode, playerName }) => {
+    const room = rooms.get(roomCode);
+    if (!room) {
+      return socket.emit('rejoin-failed');
+    }
+
+    // Find the player by name (they disconnected, so old socket id is gone)
+    let player = room.players.find(p => p.name === playerName);
+    if (player) {
+      // Update their socket id
+      const oldId = player.id;
+      player.id = socket.id;
+      socket.join(roomCode);
+      socket.roomCode = roomCode;
+
+      const state = getRoomStateForPlayer(room, player);
+      socket.emit('rejoin-success', state);
+
+      // Notify opponent they're back
+      const opponent = room.players.find(p => p.id !== socket.id);
+      if (opponent) {
+        io.to(opponent.id).emit('opponent-reconnected', { opponentName: playerName });
+      }
+      console.log(`[Room] ${playerName} rejoined room ${roomCode}`);
+    } else if (room.players.length < 2) {
+      // Player not found but room has space — join as new
+      room.players.push({ id: socket.id, name: playerName, role: 'guesser', score: 0 });
+      socket.join(roomCode);
+      socket.roomCode = roomCode;
+
+      const setter = room.players.find(p => p.role === 'setter');
+      const scores = room.players.map(p => ({ name: p.name, score: p.score }));
+
+      socket.emit('room-joined', {
+        code: roomCode, role: 'guesser',
+        opponentName: setter ? setter.name : '',
+        lang: room.lang, scores
+      });
+      if (setter) {
+        io.to(setter.id).emit('opponent-joined', { opponentName: playerName, scores });
+        room.game.phase = 'setting-word';
+        room.roundNumber++;
+        io.to(setter.id).emit('set-word-prompt', { roundNumber: room.roundNumber });
+      }
+      console.log(`[Room] ${playerName} joined room ${roomCode} (as new player)`);
+    } else {
+      socket.emit('rejoin-failed');
+    }
+  });
 
   // ── Create Room ──
   socket.on('create-room', ({ playerName, lang }) => {
     const code = generateRoomCode();
     const room = {
       code,
-      players: [{ id: socket.id, name: playerName, role: 'setter' }],
+      players: [{ id: socket.id, name: playerName, role: 'setter', score: 0 }],
       game: createGameState(),
-      lang: lang || 'en'
+      lang: lang || 'en',
+      roundNumber: 0
     };
     rooms.set(code, room);
     socket.join(code);
@@ -72,17 +163,23 @@ io.on('connection', (socket) => {
       return socket.emit('error-msg', { msg: 'room-full' });
     }
 
-    room.players.push({ id: socket.id, name: playerName, role: 'guesser' });
+    room.players.push({ id: socket.id, name: playerName, role: 'guesser', score: 0 });
     socket.join(code);
     socket.roomCode = code;
 
     const setter = room.players.find(p => p.role === 'setter');
-    socket.emit('room-joined', { code, role: 'guesser', opponentName: setter.name, lang: room.lang });
-    io.to(setter.id).emit('opponent-joined', { opponentName: playerName });
+    const scores = room.players.map(p => ({ name: p.name, score: p.score }));
 
-    // Move to word-setting phase
+    socket.emit('room-joined', {
+      code, role: 'guesser',
+      opponentName: setter.name,
+      lang: room.lang, scores
+    });
+    io.to(setter.id).emit('opponent-joined', { opponentName: playerName, scores });
+
     room.game.phase = 'setting-word';
-    io.to(setter.id).emit('set-word-prompt');
+    room.roundNumber++;
+    io.to(setter.id).emit('set-word-prompt', { roundNumber: room.roundNumber });
     console.log(`[Room] ${playerName} joined room ${code}`);
   });
 
@@ -97,15 +194,25 @@ io.on('connection', (socket) => {
     const gameLang = lang || room.lang || 'en';
     room.lang = gameLang;
 
+    let originalWord, gameHint;
+
     if (useRandom) {
       const rw = getRandomWord(gameLang);
-      room.game.word = rw.word.toLowerCase();
-      room.game.hint = rw.hint;
+      originalWord = rw.word;
+      gameHint = rw.hint;
     } else {
-      room.game.word = word.trim().toLowerCase();
-      room.game.hint = hint || '';
+      originalWord = word.trim();
+      gameHint = hint || '';
     }
 
+    room.game.displayWord = originalWord;
+    if (gameLang === 'ar') {
+      room.game.word = normalizeArabic(originalWord);
+    } else {
+      room.game.word = originalWord.toLowerCase();
+    }
+
+    room.game.hint = gameHint;
     room.game.lang = gameLang;
     room.game.guessedLetters = [];
     room.game.wrongGuesses = 0;
@@ -123,16 +230,19 @@ io.on('connection', (socket) => {
         wordLength: room.game.word.length,
         maskedWord,
         hint: room.game.hint,
-        lang: gameLang
+        lang: gameLang,
+        roundNumber: room.roundNumber
       });
     }
     io.to(player.id).emit('game-started-setter', {
-      word: room.game.word,
+      word: room.game.displayWord,
       hint: room.game.hint,
-      lang: gameLang
+      lang: gameLang,
+      roundNumber: room.roundNumber,
+      maskedWord
     });
 
-    console.log(`[Game] Word set in room ${socket.roomCode}: ${room.game.word}`);
+    console.log(`[Game] Word set in room ${socket.roomCode}: ${room.game.displayWord} (normalized: ${room.game.word})`);
   });
 
   // ── Guess Letter ──
@@ -143,12 +253,17 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.id === socket.id);
     if (!player || player.role !== 'guesser') return;
 
-    const lowerLetter = letter.toLowerCase();
-    if (room.game.guessedLetters.includes(lowerLetter)) return;
+    let normalizedLetter = letter;
+    if (room.game.lang === 'ar') {
+      normalizedLetter = normalizeArabic(letter);
+    } else {
+      normalizedLetter = letter.toLowerCase();
+    }
 
-    room.game.guessedLetters.push(lowerLetter);
+    if (room.game.guessedLetters.includes(normalizedLetter)) return;
+    room.game.guessedLetters.push(normalizedLetter);
 
-    const isCorrect = room.game.word.includes(lowerLetter);
+    const isCorrect = room.game.word.includes(normalizedLetter);
     if (!isCorrect) {
       room.game.wrongGuesses++;
     }
@@ -166,22 +281,33 @@ io.on('connection', (socket) => {
     if (allRevealed) {
       room.game.phase = 'finished';
       room.game.winner = 'guesser';
+      const guesserPlayer = room.players.find(p => p.role === 'guesser');
+      if (guesserPlayer) {
+        guesserPlayer.score += (MAX_WRONG - room.game.wrongGuesses) * 10 + 10;
+      }
       gameOver = true;
     } else if (room.game.wrongGuesses >= MAX_WRONG) {
       room.game.phase = 'finished';
       room.game.winner = 'setter';
+      const setterPlayer = room.players.find(p => p.role === 'setter');
+      if (setterPlayer) {
+        setterPlayer.score += 30;
+      }
       gameOver = true;
     }
 
+    const scores = room.players.map(p => ({ name: p.name, score: p.score }));
+
     io.to(socket.roomCode).emit('guess-result', {
-      letter: lowerLetter,
+      letter: normalizedLetter,
       isCorrect,
       maskedWord,
       wrongGuesses: room.game.wrongGuesses,
       guessedLetters: room.game.guessedLetters,
       gameOver,
       winner: room.game.winner,
-      word: gameOver ? room.game.word : null
+      word: gameOver ? room.game.displayWord : null,
+      scores
     });
 
     if (gameOver) {
@@ -189,30 +315,49 @@ io.on('connection', (socket) => {
     }
   });
 
+  // ── Chat Message ──
+  socket.on('chat-msg', ({ text }) => {
+    const room = rooms.get(socket.roomCode);
+    if (!room) return;
+    const player = room.players.find(p => p.id === socket.id);
+    if (!player) return;
+
+    const msg = text.trim().slice(0, 200);
+    if (!msg) return;
+
+    io.to(socket.roomCode).emit('chat-msg', {
+      sender: player.name,
+      text: msg
+    });
+  });
+
   // ── Play Again (swap roles) ──
   socket.on('play-again', () => {
     const room = rooms.get(socket.roomCode);
     if (!room) return;
 
-    // Swap roles
     room.players.forEach(p => {
       p.role = p.role === 'setter' ? 'guesser' : 'setter';
     });
 
     room.game = createGameState();
     room.game.phase = 'setting-word';
+    room.roundNumber++;
+
+    const scores = room.players.map(p => ({ name: p.name, score: p.score }));
 
     room.players.forEach(p => {
-      io.to(p.id).emit('new-round', { role: p.role });
+      io.to(p.id).emit('new-round', { role: p.role, scores, roundNumber: room.roundNumber });
     });
 
     const newSetter = room.players.find(p => p.role === 'setter');
     if (newSetter) {
-      io.to(newSetter.id).emit('set-word-prompt');
+      io.to(newSetter.id).emit('set-word-prompt', { roundNumber: room.roundNumber });
     }
   });
 
   // ── Disconnect ──
+  // Give 30 seconds grace period before removing player
   socket.on('disconnect', () => {
     console.log(`[-] Disconnected: ${socket.id}`);
     const code = socket.roomCode;
@@ -221,16 +366,36 @@ io.on('connection', (socket) => {
     const room = rooms.get(code);
     if (!room) return;
 
-    const remaining = room.players.filter(p => p.id !== socket.id);
-    if (remaining.length === 0) {
-      rooms.delete(code);
-      console.log(`[Room] Room ${code} deleted (empty)`);
-    } else {
-      room.players = remaining;
-      remaining.forEach(p => {
-        io.to(p.id).emit('opponent-left');
-      });
+    const player = room.players.find(p => p.id === socket.id);
+    if (!player) return;
+
+    // Mark as disconnected, give time to rejoin
+    player.disconnectedAt = Date.now();
+
+    // Notify opponent
+    const opponent = room.players.find(p => p.id !== socket.id);
+    if (opponent) {
+      io.to(opponent.id).emit('opponent-disconnected', { opponentName: player.name });
     }
+
+    // Clean up after 60 seconds if not rejoined
+    setTimeout(() => {
+      const currentRoom = rooms.get(code);
+      if (!currentRoom) return;
+      const currentPlayer = currentRoom.players.find(p => p.name === player.name);
+      if (currentPlayer && currentPlayer.disconnectedAt) {
+        // Still disconnected after grace period
+        currentRoom.players = currentRoom.players.filter(p => p.name !== player.name);
+        if (currentRoom.players.length === 0) {
+          rooms.delete(code);
+          console.log(`[Room] Room ${code} deleted (empty after timeout)`);
+        } else {
+          currentRoom.players.forEach(p => {
+            io.to(p.id).emit('opponent-left');
+          });
+        }
+      }
+    }, 60000);
   });
 });
 
