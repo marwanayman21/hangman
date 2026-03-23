@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hangman Online | لعبة المشنقة</title>
+  <meta name="description" content="Real-time multiplayer Hangman game. Play online with friends in Arabic and English!" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- ═══════════ HEADER ═══════════ -->
+  <header id="main-header">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon">☠️</span>
+        <span class="logo-text" data-i18n="title">Hangman</span>
+      </div>
+      <button id="lang-toggle" class="btn-icon" title="Switch Language">
+        <span id="lang-label">عربي</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ═══════════ SCREENS ═══════════ -->
+  <main id="app">
+
+    <!-- ── HOME SCREEN ── -->
+    <section id="screen-home" class="screen active">
+      <div class="hero">
+        <div class="hero-hangman">
+          <svg viewBox="0 0 200 220" class="hangman-hero-svg">
+            <line x1="20" y1="210" x2="80" y2="210" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+            <line x1="50" y1="210" x2="50" y2="30" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+            <line x1="50" y1="30" x2="130" y2="30" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+            <line x1="130" y1="30" x2="130" y2="55" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+            <circle cx="130" cy="72" r="17" stroke="currentColor" stroke-width="3" fill="none" class="hero-part" style="animation-delay:0s"/>
+            <line x1="130" y1="89" x2="130" y2="140" stroke="currentColor" stroke-width="3" stroke-linecap="round" class="hero-part" style="animation-delay:0.2s"/>
+            <line x1="130" y1="100" x2="105" y2="125" stroke="currentColor" stroke-width="3" stroke-linecap="round" class="hero-part" style="animation-delay:0.4s"/>
+            <line x1="130" y1="100" x2="155" y2="125" stroke="currentColor" stroke-width="3" stroke-linecap="round" class="hero-part" style="animation-delay:0.6s"/>
+            <line x1="130" y1="140" x2="108" y2="175" stroke="currentColor" stroke-width="3" stroke-linecap="round" class="hero-part" style="animation-delay:0.8s"/>
+            <line x1="130" y1="140" x2="152" y2="175" stroke="currentColor" stroke-width="3" stroke-linecap="round" class="hero-part" style="animation-delay:1s"/>
+          </svg>
+        </div>
+        <h1 data-i18n="welcome">Play Hangman Online</h1>
+        <p class="subtitle" data-i18n="welcomeSub">Real-time multiplayer • Arabic & English</p>
+      </div>
+
+      <div class="home-cards">
+        <div class="card glass">
+          <h2 data-i18n="enterName">Your Name</h2>
+          <input type="text" id="player-name" maxlength="20" placeholder="" data-i18n-placeholder="namePlaceholder" autocomplete="off" />
+        </div>
+
+        <div class="card glass">
+          <h2 data-i18n="createTitle">Create Room</h2>
+          <p class="card-desc" data-i18n="createDesc">Start a new game and share the code</p>
+          <button id="btn-create" class="btn btn-primary" data-i18n="createBtn">Create Room</button>
+        </div>
+
+        <div class="card glass">
+          <h2 data-i18n="joinTitle">Join Room</h2>
+          <p class="card-desc" data-i18n="joinDesc">Enter a room code to join a game</p>
+          <input type="text" id="room-code-input" maxlength="4" placeholder="XXXX" autocomplete="off" class="code-input" />
+          <button id="btn-join" class="btn btn-secondary" data-i18n="joinBtn">Join Room</button>
+        </div>
+      </div>
+
+      <p id="home-error" class="error-text"></p>
+    </section>
+
+    <!-- ── LOBBY SCREEN ── -->
+    <section id="screen-lobby" class="screen">
+      <div class="lobby-container glass">
+        <div class="lobby-icon">⏳</div>
+        <h2 id="lobby-title" data-i18n="lobbyWaiting">Waiting for opponent...</h2>
+        <div class="room-code-display">
+          <span data-i18n="roomCode">Room Code</span>
+          <div class="code-box" id="lobby-code">----</div>
+          <button id="btn-copy-code" class="btn btn-sm" data-i18n="copyCode">Copy</button>
+        </div>
+        <p class="lobby-hint" data-i18n="lobbyHint">Share this code with your friend!</p>
+      </div>
+    </section>
+
+    <!-- ── SET WORD SCREEN ── -->
+    <section id="screen-set-word" class="screen">
+      <div class="set-word-container glass">
+        <h2 data-i18n="setWordTitle">Choose a Word</h2>
+        <p class="card-desc" data-i18n="setWordDesc">Pick a word for your opponent to guess</p>
+
+        <div class="lang-choice">
+          <button class="btn btn-sm lang-btn active" data-lang="en">English</button>
+          <button class="btn btn-sm lang-btn" data-lang="ar">عربي</button>
+        </div>
+
+        <div class="set-word-form">
+          <input type="text" id="custom-word" maxlength="30" placeholder="" data-i18n-placeholder="wordPlaceholder" autocomplete="off" />
+          <input type="text" id="custom-hint" maxlength="60" placeholder="" data-i18n-placeholder="hintPlaceholder" autocomplete="off" />
+          <button id="btn-set-word" class="btn btn-primary" data-i18n="setWordBtn">Set Word</button>
+          <div class="divider"><span data-i18n="or">or</span></div>
+          <button id="btn-random-word" class="btn btn-secondary" data-i18n="randomBtn">Random Word</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── GAME SCREEN ── -->
+    <section id="screen-game" class="screen">
+      <div class="game-top-bar">
+        <div class="player-info">
+          <span class="badge" id="role-badge">Guesser</span>
+          <span class="vs-label">vs</span>
+          <span class="opponent-name" id="opponent-name-display">Opponent</span>
+        </div>
+        <div class="wrong-counter" id="wrong-counter">
+          <span class="heart">❤️</span> <span id="lives-count">6</span>
+        </div>
+      </div>
+
+      <!-- Hangman SVG -->
+      <div class="hangman-area">
+        <svg id="hangman-svg" viewBox="0 0 200 220">
+          <!-- Gallows -->
+          <line x1="20" y1="210" x2="80" y2="210" stroke="var(--clr-gallows)" stroke-width="4" stroke-linecap="round"/>
+          <line x1="50" y1="210" x2="50" y2="30" stroke="var(--clr-gallows)" stroke-width="4" stroke-linecap="round"/>
+          <line x1="50" y1="30" x2="130" y2="30" stroke="var(--clr-gallows)" stroke-width="4" stroke-linecap="round"/>
+          <line x1="130" y1="30" x2="130" y2="55" stroke="var(--clr-gallows)" stroke-width="4" stroke-linecap="round"/>
+          <!-- Body parts (hidden by default) -->
+          <circle id="hm-head" cx="130" cy="72" r="17" stroke="var(--clr-body)" stroke-width="3" fill="none" class="hm-part hidden"/>
+          <line id="hm-body" x1="130" y1="89" x2="130" y2="140" stroke="var(--clr-body)" stroke-width="3" stroke-linecap="round" class="hm-part hidden"/>
+          <line id="hm-larm" x1="130" y1="100" x2="105" y2="125" stroke="var(--clr-body)" stroke-width="3" stroke-linecap="round" class="hm-part hidden"/>
+          <line id="hm-rarm" x1="130" y1="100" x2="155" y2="125" stroke="var(--clr-body)" stroke-width="3" stroke-linecap="round" class="hm-part hidden"/>
+          <line id="hm-lleg" x1="130" y1="140" x2="108" y2="175" stroke="var(--clr-body)" stroke-width="3" stroke-linecap="round" class="hm-part hidden"/>
+          <line id="hm-rleg" x1="130" y1="140" x2="152" y2="175" stroke="var(--clr-body)" stroke-width="3" stroke-linecap="round" class="hm-part hidden"/>
+        </svg>
+      </div>
+
+      <!-- Hint -->
+      <div class="hint-area">
+        <span class="hint-label" data-i18n="hintLabel">Hint:</span>
+        <span id="hint-text" class="hint-text"></span>
+      </div>
+
+      <!-- Word Display -->
+      <div id="word-display" class="word-display"></div>
+
+      <!-- Keyboard -->
+      <div id="keyboard" class="keyboard"></div>
+
+      <!-- Setter watching view -->
+      <div id="setter-view" class="setter-view hidden">
+        <p data-i18n="setterWatching">Watching your opponent guess...</p>
+        <div class="setter-word">
+          <span data-i18n="yourWord">Your word:</span>
+          <strong id="setter-word-text"></strong>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── GAME OVER OVERLAY ── -->
+    <div id="game-over-overlay" class="overlay hidden">
+      <div class="overlay-card glass">
+        <div id="go-icon" class="go-icon">🎉</div>
+        <h2 id="go-title">You Win!</h2>
+        <p id="go-word" class="go-word"></p>
+        <button id="btn-play-again" class="btn btn-primary" data-i18n="playAgain">Play Again</button>
+        <button id="btn-go-home" class="btn btn-secondary" data-i18n="goHome">Back to Home</button>
+      </div>
+    </div>
+
+    <!-- ── OPPONENT LEFT OVERLAY ── -->
+    <div id="opponent-left-overlay" class="overlay hidden">
+      <div class="overlay-card glass">
+        <div class="go-icon">😢</div>
+        <h2 data-i18n="opponentLeft">Opponent Left</h2>
+        <p data-i18n="opponentLeftDesc">Your opponent has disconnected.</p>
+        <button id="btn-left-home" class="btn btn-primary" data-i18n="goHome">Back to Home</button>
+      </div>
+    </div>
+  </main>
+
+  <!-- ── Toast Notifications ── -->
+  <div id="toast-container"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
