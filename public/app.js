@@ -103,7 +103,7 @@ const KEYS_EN = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 const KEYS_AR = [
   'ا','ب','ت','ث','ج','ح','خ','د','ذ','ر','ز',
   'س','ش','ص','ض','ط','ظ','ع','غ','ف','ق',
-  'ك','ل','م','ن','ه','و','ي','ة','ى','ء','أ','إ','آ','ؤ','ئ'
+  'ك','ل','م','ن','ه','و','ي','ة','ء','أ','إ','آ','ؤ','ئ'
 ];
 
 // ─── State ───────────────────────────────────────────────────
@@ -199,6 +199,12 @@ function showHangmanPart(index) {
 function renderWord(maskedWord) {
   const container = $('#word-display');
   container.innerHTML = '';
+  // Set RTL direction for Arabic words
+  if (gameLang === 'ar') {
+    container.style.direction = 'rtl';
+  } else {
+    container.style.direction = 'ltr';
+  }
   maskedWord.forEach((ch, i) => {
     const slot = document.createElement('div');
     slot.className = 'letter-slot';
@@ -376,7 +382,9 @@ socket.on('opponent-joined', ({ opponentName: oppName }) => {
 socket.on('set-word-prompt', () => {
   $('#custom-word').value = '';
   $('#custom-hint').value = '';
-  gameLang = currentLang;
+  // Use room language, not UI language
+  const roomLang = currentLang || 'en';
+  gameLang = roomLang;
   $$('.lang-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.lang === gameLang);
   });
