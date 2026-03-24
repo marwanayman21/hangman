@@ -131,13 +131,18 @@
         <h2 data-i18n="setWordTitle">Choose a Word</h2>
         <p class="card-desc" data-i18n="setWordDesc">Pick a word for your opponent to guess</p>
 
+        <div class="mode-choice">
+          <button class="btn btn-sm mode-btn active" data-mode="word" data-i18n="modeWord">📝 Word</button>
+          <button class="btn btn-sm mode-btn" data-mode="sentence" data-i18n="modeSentence">📜 Sentence</button>
+        </div>
+
         <div class="lang-choice">
           <button class="btn btn-sm lang-btn active" data-lang="en">English</button>
           <button class="btn btn-sm lang-btn" data-lang="ar">عربي</button>
         </div>
 
         <div class="set-word-form">
-          <input type="text" id="custom-word" maxlength="30" placeholder="" data-i18n-placeholder="wordPlaceholder" autocomplete="off" />
+          <input type="text" id="custom-word" maxlength="60" placeholder="" data-i18n-placeholder="wordPlaceholder" autocomplete="off" />
           <input type="text" id="custom-hint" maxlength="60" placeholder="" data-i18n-placeholder="hintPlaceholder" autocomplete="off" />
           <button id="btn-set-word" class="btn btn-primary" data-i18n="setWordBtn">Set Word</button>
           <div class="divider"><span data-i18n="or">or</span></div>

@@ -58,7 +58,11 @@ const i18n = {
     opponentDisconnected: 'Opponent disconnected. Waiting to reconnect...',
     opponentReconnected: 'Opponent reconnected! 🎮',
     wordLangError: 'Please type using the correct language!',
-    wordNoNumbers: 'Numbers are not allowed!'
+    wordNoNumbers: 'Numbers are not allowed!',
+    modeWord: '📝 Word',
+    modeSentence: '📜 Sentence',
+    sentencePlaceholder: 'Type a sentence...',
+    modeLabel: 'Mode:'
   },
   ar: {
     title: 'المشنقة',
@@ -114,7 +118,11 @@ const i18n = {
     opponentDisconnected: 'الخصم اتقطع. مستنيه يرجع...',
     opponentReconnected: 'الخصم رجع! 🎮',
     wordLangError: 'اكتب باللغة الصح!',
-    wordNoNumbers: 'مينفعش تكتب أرقام!'
+    wordNoNumbers: 'مينفعش تكتب أرقام!',
+    modeWord: '📝 كلمة',
+    modeSentence: '📜 جملة',
+    sentencePlaceholder: 'اكتب جملة...',
+    modeLabel: 'المود:'
   }
 };
 
@@ -176,6 +184,8 @@ let currentLang = 'en';
 let currentRole = null;
 let currentRoomCode = null;
 let gameLang = 'en';
+let gameMode = 'word';
+let maxWrong = 6;
 let opponentName = '';
 let playerName = '';
 let chatOpen = false;
@@ -288,27 +298,58 @@ function renderWord(maskedWord) {
   container.innerHTML = '';
   container.style.direction = gameLang === 'ar' ? 'rtl' : 'ltr';
 
-  maskedWord.forEach((ch, i) => {
-    const slot = document.createElement('div');
-    slot.className = 'letter-slot';
+  // Determine if we need smaller slots (long text)
+  const totalLetters = maskedWord.filter(ch => ch !== ' ').length;
+  const isSmall = totalLetters > 10;
+
+  // Group letters by words (split on spaces)
+  let currentWord = [];
+  const words = [];
+  let globalIdx = 0;
+
+  maskedWord.forEach((ch) => {
     if (ch === ' ') {
-      slot.classList.add('space-slot');
-    } else if (ch !== '_') {
-      slot.textContent = ch;
-      slot.classList.add('revealed');
+      if (currentWord.length > 0) {
+        words.push({ letters: [...currentWord] });
+        currentWord = [];
+      }
+    } else {
+      currentWord.push({ ch, idx: globalIdx });
     }
-    slot.dataset.index = i;
-    container.appendChild(slot);
+    globalIdx++;
+  });
+  if (currentWord.length > 0) words.push({ letters: [...currentWord] });
+
+  words.forEach((wordGroup) => {
+    const wordWrapper = document.createElement('div');
+    wordWrapper.className = 'word-group';
+
+    wordGroup.letters.forEach(({ ch, idx }) => {
+      const slot = document.createElement('div');
+      slot.className = `letter-slot${isSmall ? ' letter-slot-sm' : ''}`;
+      if (ch !== '_') {
+        slot.textContent = ch;
+        slot.classList.add('revealed');
+      }
+      slot.dataset.index = idx;
+      wordWrapper.appendChild(slot);
+    });
+
+    container.appendChild(wordWrapper);
   });
 }
 
 function updateWord(maskedWord) {
   const slots = $$('.letter-slot');
+  // Build a map from index → slot element
+  const slotMap = {};
+  slots.forEach(s => { slotMap[s.dataset.index] = s; });
+
   maskedWord.forEach((ch, i) => {
-    if (i < slots.length && ch !== '_' && ch !== ' ') {
-      if (!slots[i].classList.contains('revealed')) {
-        slots[i].textContent = ch;
-        slots[i].classList.add('revealed');
+    if (ch !== '_' && ch !== ' ' && slotMap[i]) {
+      if (!slotMap[i].classList.contains('revealed')) {
+        slotMap[i].textContent = ch;
+        slotMap[i].classList.add('revealed');
       }
     }
   });
@@ -317,13 +358,18 @@ function updateWord(maskedWord) {
 function revealFullWord(word) {
   const normalized = gameLang === 'ar' ? normalizeArabic(word) : word;
   const slots = $$('.letter-slot');
-  normalized.split('').forEach((ch, i) => {
-    if (i < slots.length && ch !== ' ') {
-      slots[i].textContent = ch;
-      if (!slots[i].classList.contains('revealed')) {
-        slots[i].classList.add('final-reveal');
+  const slotMap = {};
+  slots.forEach(s => { slotMap[s.dataset.index] = s; });
+
+  let idx = 0;
+  normalized.split('').forEach((ch) => {
+    if (ch !== ' ' && slotMap[idx]) {
+      slotMap[idx].textContent = ch;
+      if (!slotMap[idx].classList.contains('revealed')) {
+        slotMap[idx].classList.add('final-reveal');
       }
     }
+    idx++;
   });
 }
 
@@ -450,7 +496,22 @@ $('#btn-copy-code').addEventListener('click', () => {
 });
 
 // ─── Screen: Set Word ────────────────────────────────────────
-$$('.lang-btn').forEach(btn => {
+  $$('.mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      $$('.mode-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      gameMode = btn.dataset.mode;
+      // Update placeholder
+      const wordInput = $('#custom-word');
+      if (gameMode === 'sentence') {
+        wordInput.placeholder = t('sentencePlaceholder');
+      } else {
+        wordInput.placeholder = t('wordPlaceholder');
+      }
+    });
+  });
+
+  $$('.lang-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     $$('.lang-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
@@ -477,11 +538,11 @@ $('#btn-set-word').addEventListener('click', () => {
   }
 
   const hint = $('#custom-hint').value.trim();
-  socket.emit('set-word', { word, hint, useRandom: false, lang: gameLang });
+  socket.emit('set-word', { word, hint, useRandom: false, lang: gameLang, mode: gameMode });
 });
 
 $('#btn-random-word').addEventListener('click', () => {
-  socket.emit('set-word', { word: '', hint: '', useRandom: true, lang: gameLang });
+  socket.emit('set-word', { word: '', hint: '', useRandom: true, lang: gameLang, mode: gameMode });
 });
 
 // ─── Screen: Game Over ───────────────────────────────────────
@@ -532,13 +593,17 @@ socket.on('set-word-prompt', ({ roundNumber }) => {
   $('#custom-word').value = '';
   $('#custom-hint').value = '';
   gameLang = currentLang || 'en';
+  gameMode = 'word';
   $$('.lang-btn').forEach(b => b.classList.toggle('active', b.dataset.lang === gameLang));
+  $$('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === 'word'));
   if (roundNumber) $('#round-badge').textContent = `${t('round')} ${roundNumber}`;
   showScreen('setWord');
 });
 
-socket.on('game-started', ({ maskedWord, hint, lang, roundNumber }) => {
+socket.on('game-started', ({ maskedWord, hint, lang, roundNumber, mode, maxWrong: mw }) => {
   gameLang = lang;
+  gameMode = mode || 'word';
+  maxWrong = mw || 6;
   showScreen('game');
   hideAllOverlays();
   $('#chat-messages').innerHTML = '';
@@ -546,7 +611,7 @@ socket.on('game-started', ({ maskedWord, hint, lang, roundNumber }) => {
   $('#role-badge').textContent = t('roleGuesser');
   $('#game-round-label').textContent = `${t('round')} ${roundNumber || 1}`;
   $('#hint-text').textContent = hint;
-  $('#lives-count').textContent = '6';
+  $('#lives-count').textContent = String(maxWrong);
   $('#setter-view').classList.add('hidden');
   $('#keyboard').classList.remove('hidden');
 
@@ -555,8 +620,10 @@ socket.on('game-started', ({ maskedWord, hint, lang, roundNumber }) => {
   renderKeyboard(lang);
 });
 
-socket.on('game-started-setter', ({ word, hint, lang, roundNumber, maskedWord }) => {
+socket.on('game-started-setter', ({ word, hint, lang, roundNumber, maskedWord, mode, maxWrong: mw }) => {
   gameLang = lang;
+  gameMode = mode || 'word';
+  maxWrong = mw || 6;
   showScreen('game');
   hideAllOverlays();
   $('#chat-messages').innerHTML = '';
@@ -564,7 +631,7 @@ socket.on('game-started-setter', ({ word, hint, lang, roundNumber, maskedWord })
   $('#role-badge').textContent = t('roleSetter');
   $('#game-round-label').textContent = `${t('round')} ${roundNumber || 1}`;
   $('#hint-text').textContent = hint;
-  $('#lives-count').textContent = '6';
+  $('#lives-count').textContent = String(maxWrong);
   $('#setter-view').classList.remove('hidden');
   $('#setter-word-text').textContent = word;
   $('#keyboard').classList.add('hidden');
@@ -586,10 +653,21 @@ socket.on('guess-result', ({ letter, isCorrect, maskedWord, wrongGuesses, guesse
   // Update setter keyboard
   updateSetterKeyboard(letter, isCorrect);
 
-  const lives = 6 - wrongGuesses;
+  const lives = maxWrong - wrongGuesses;
   $('#lives-count').textContent = lives;
 
-  if (!isCorrect) showHangmanPart(wrongGuesses - 1);
+  // Show hangman parts proportionally based on maxWrong
+  // 6 parts, threshold = (partIndex + 1) * maxWrong / 6
+  for (let i = 0; i < 6; i++) {
+    const threshold = Math.ceil((i + 1) * maxWrong / 6);
+    if (wrongGuesses >= threshold) {
+      const el = $(`#${HM_PARTS[i]}`);
+      if (el.classList.contains('hidden')) {
+        el.classList.remove('hidden');
+        el.classList.add('visible');
+      }
+    }
+  }
   if (scores) updateScoreDisplay(scores);
 
   if (gameOver) {
@@ -684,16 +762,22 @@ socket.on('rejoin-success', (state) => {
     }
   } else if (phase === 'playing' || phase === 'finished') {
     gameLang = game.lang || 'en';
+    gameMode = game.mode || 'word';
+    maxWrong = game.maxWrong || 6;
     showScreen('game');
     hideAllOverlays();
     $('#chat-messages').innerHTML = '';
     $('#hint-text').textContent = game.hint;
-    $('#lives-count').textContent = String(6 - game.wrongGuesses);
+    $('#lives-count').textContent = String(maxWrong - game.wrongGuesses);
     $('#game-round-label').textContent = `${t('round')} ${state.roundNumber || 1}`;
 
     resetHangman();
-    for (let i = 0; i < game.wrongGuesses; i++) {
-      showHangmanPart(i);
+    // Show hangman parts proportionally
+    for (let i = 0; i < 6; i++) {
+      const threshold = Math.ceil((i + 1) * maxWrong / 6);
+      if (game.wrongGuesses >= threshold) {
+        showHangmanPart(i);
+      }
     }
 
     renderWord(game.maskedWord);

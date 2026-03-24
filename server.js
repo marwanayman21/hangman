@@ -14,7 +14,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Room & Game State ───────────────────────────────────────────────
 const rooms = new Map();
-const MAX_WRONG = 6;
+const DEFAULT_MAX_WRONG = 6;
 
 function generateRoomCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -23,9 +23,19 @@ function generateRoomCode() {
   return rooms.has(code) ? generateRoomCode() : code;
 }
 
-function getRandomWord(lang) {
-  const list = words[lang] || words['en'];
+function getRandomWord(lang, mode) {
+  const langData = words[lang] || words['en'];
+  const list = mode === 'sentence' ? langData.sentences : langData.words;
   return list[Math.floor(Math.random() * list.length)];
+}
+
+// Calculate max wrong guesses based on unique letters
+function calculateMaxWrong(normalizedWord) {
+  const uniqueLetters = new Set(normalizedWord.split('').filter(ch => ch !== ' '));
+  const count = uniqueLetters.size;
+  // For short words (<=7 unique): 6 attempts
+  // For sentences: scale up proportionally, cap at 12
+  return Math.min(Math.max(Math.ceil(count * 0.45), 6), 12);
 }
 
 // ─── Arabic Letter Normalization ─────────────────────────────────────
@@ -42,9 +52,11 @@ function createGameState() {
     displayWord: '',
     hint: '',
     lang: 'en',
+    mode: 'word',
+    maxWrong: DEFAULT_MAX_WRONG,
     guessedLetters: [],
     wrongGuesses: 0,
-    phase: 'waiting', // waiting | setting-word | playing | finished
+    phase: 'waiting',
     winner: null
   };
 }
@@ -70,6 +82,8 @@ function getRoomStateForPlayer(room, player) {
       maskedWord,
       hint: room.game.hint,
       lang: room.game.lang,
+      mode: room.game.mode,
+      maxWrong: room.game.maxWrong,
       wrongGuesses: room.game.wrongGuesses,
       guessedLetters: room.game.guessedLetters,
       displayWord: player.role === 'setter' ? room.game.displayWord : null,
@@ -185,7 +199,7 @@ io.on('connection', (socket) => {
   });
 
   // ── Set Word ──
-  socket.on('set-word', ({ word, hint, useRandom, lang }) => {
+  socket.on('set-word', ({ word, hint, useRandom, lang, mode }) => {
     const room = rooms.get(socket.roomCode);
     if (!room) return;
 
@@ -193,12 +207,13 @@ io.on('connection', (socket) => {
     if (!player || player.role !== 'setter') return;
 
     const gameLang = lang || room.lang || 'en';
+    const gameMode = mode || 'word';
     room.lang = gameLang;
 
     let originalWord, gameHint;
 
     if (useRandom) {
-      const rw = getRandomWord(gameLang);
+      const rw = getRandomWord(gameLang, gameMode);
       originalWord = rw.word;
       gameHint = rw.hint;
     } else {
@@ -213,8 +228,15 @@ io.on('connection', (socket) => {
       room.game.word = originalWord.toLowerCase();
     }
 
+    // Calculate dynamic max wrong
+    const maxWrong = gameMode === 'sentence'
+      ? calculateMaxWrong(room.game.word)
+      : DEFAULT_MAX_WRONG;
+
     room.game.hint = gameHint;
     room.game.lang = gameLang;
+    room.game.mode = gameMode;
+    room.game.maxWrong = maxWrong;
     room.game.guessedLetters = [];
     room.game.wrongGuesses = 0;
     room.game.phase = 'playing';
@@ -232,6 +254,8 @@ io.on('connection', (socket) => {
         maskedWord,
         hint: room.game.hint,
         lang: gameLang,
+        mode: gameMode,
+        maxWrong,
         roundNumber: room.roundNumber
       });
     }
@@ -239,11 +263,13 @@ io.on('connection', (socket) => {
       word: room.game.displayWord,
       hint: room.game.hint,
       lang: gameLang,
+      mode: gameMode,
+      maxWrong,
       roundNumber: room.roundNumber,
       maskedWord
     });
 
-    console.log(`[Game] Word set in room ${socket.roomCode}: ${room.game.displayWord} (normalized: ${room.game.word})`);
+    console.log(`[Game] ${gameMode} set in room ${socket.roomCode}: ${room.game.displayWord} (maxWrong: ${maxWrong})`);
   });
 
   // ── Guess Letter ──
@@ -284,10 +310,10 @@ io.on('connection', (socket) => {
       room.game.winner = 'guesser';
       const guesserPlayer = room.players.find(p => p.role === 'guesser');
       if (guesserPlayer) {
-        guesserPlayer.score += (MAX_WRONG - room.game.wrongGuesses) * 10 + 10;
+        guesserPlayer.score += (room.game.maxWrong - room.game.wrongGuesses) * 10 + 10;
       }
       gameOver = true;
-    } else if (room.game.wrongGuesses >= MAX_WRONG) {
+    } else if (room.game.wrongGuesses >= room.game.maxWrong) {
       room.game.phase = 'finished';
       room.game.winner = 'setter';
       const setterPlayer = room.players.find(p => p.role === 'setter');
