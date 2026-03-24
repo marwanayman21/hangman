@@ -150,18 +150,25 @@ function hasNumbers(text) {
 
 // ─── Session Persistence ─────────────────────────────────────
 function saveSession(roomCode, playerName, role) {
-  sessionStorage.setItem('hangman_session', JSON.stringify({ roomCode, playerName, role }));
+  localStorage.setItem('hangman_session', JSON.stringify({ roomCode, playerName, role, ts: Date.now() }));
 }
 
 function getSession() {
   try {
-    const data = sessionStorage.getItem('hangman_session');
-    return data ? JSON.parse(data) : null;
+    const data = localStorage.getItem('hangman_session');
+    if (!data) return null;
+    const session = JSON.parse(data);
+    // Session expires after 10 minutes
+    if (Date.now() - session.ts > 600000) {
+      localStorage.removeItem('hangman_session');
+      return null;
+    }
+    return session;
   } catch { return null; }
 }
 
 function clearSession() {
-  sessionStorage.removeItem('hangman_session');
+  localStorage.removeItem('hangman_session');
 }
 
 // ─── State ───────────────────────────────────────────────────

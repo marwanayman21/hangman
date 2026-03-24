@@ -93,9 +93,10 @@ io.on('connection', (socket) => {
     // Find the player by name (they disconnected, so old socket id is gone)
     let player = room.players.find(p => p.name === playerName);
     if (player) {
-      // Update their socket id
-      const oldId = player.id;
+      // Update their socket id and mark as connected
       player.id = socket.id;
+      player.connected = true;
+      player.disconnectedAt = null;
       socket.join(roomCode);
       socket.roomCode = roomCode;
 
@@ -103,7 +104,7 @@ io.on('connection', (socket) => {
       socket.emit('rejoin-success', state);
 
       // Notify opponent they're back
-      const opponent = room.players.find(p => p.id !== socket.id);
+      const opponent = room.players.find(p => p.id !== socket.id && p.connected !== false);
       if (opponent) {
         io.to(opponent.id).emit('opponent-reconnected', { opponentName: playerName });
       }
@@ -139,7 +140,7 @@ io.on('connection', (socket) => {
     const code = generateRoomCode();
     const room = {
       code,
-      players: [{ id: socket.id, name: playerName, role: 'setter', score: 0 }],
+      players: [{ id: socket.id, name: playerName, role: 'setter', score: 0, connected: true }],
       game: createGameState(),
       lang: lang || 'en',
       roundNumber: 0
@@ -163,7 +164,7 @@ io.on('connection', (socket) => {
       return socket.emit('error-msg', { msg: 'room-full' });
     }
 
-    room.players.push({ id: socket.id, name: playerName, role: 'guesser', score: 0 });
+    room.players.push({ id: socket.id, name: playerName, role: 'guesser', score: 0, connected: true });
     socket.join(code);
     socket.roomCode = code;
 
@@ -331,10 +332,13 @@ io.on('connection', (socket) => {
     });
   });
 
-  // ── Play Again (swap roles) ──
+  // ── Play Again (swap roles — guarded to run only once) ──
   socket.on('play-again', () => {
     const room = rooms.get(socket.roomCode);
     if (!room) return;
+
+    // Only process if game is still in 'finished' phase (prevents double-swap)
+    if (room.game.phase !== 'finished') return;
 
     room.players.forEach(p => {
       p.role = p.role === 'setter' ? 'guesser' : 'setter';
@@ -357,7 +361,7 @@ io.on('connection', (socket) => {
   });
 
   // ── Disconnect ──
-  // Give 30 seconds grace period before removing player
+  // Keep room alive for 10 minutes so players can rejoin freely
   socket.on('disconnect', () => {
     console.log(`[-] Disconnected: ${socket.id}`);
     const code = socket.roomCode;
@@ -369,33 +373,26 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.id === socket.id);
     if (!player) return;
 
-    // Mark as disconnected, give time to rejoin
+    // Mark as disconnected but keep them in the room
     player.disconnectedAt = Date.now();
+    player.connected = false;
 
     // Notify opponent
-    const opponent = room.players.find(p => p.id !== socket.id);
+    const opponent = room.players.find(p => p.id !== socket.id && p.connected !== false);
     if (opponent) {
       io.to(opponent.id).emit('opponent-disconnected', { opponentName: player.name });
     }
 
-    // Clean up after 60 seconds if not rejoined
+    // Clean up room after 10 minutes if BOTH players are disconnected
     setTimeout(() => {
       const currentRoom = rooms.get(code);
       if (!currentRoom) return;
-      const currentPlayer = currentRoom.players.find(p => p.name === player.name);
-      if (currentPlayer && currentPlayer.disconnectedAt) {
-        // Still disconnected after grace period
-        currentRoom.players = currentRoom.players.filter(p => p.name !== player.name);
-        if (currentRoom.players.length === 0) {
-          rooms.delete(code);
-          console.log(`[Room] Room ${code} deleted (empty after timeout)`);
-        } else {
-          currentRoom.players.forEach(p => {
-            io.to(p.id).emit('opponent-left');
-          });
-        }
+      const allDisconnected = currentRoom.players.every(p => p.connected === false);
+      if (allDisconnected) {
+        rooms.delete(code);
+        console.log(`[Room] Room ${code} deleted (all players disconnected for 10 min)`);
       }
-    }, 60000);
+    }, 600000); // 10 minutes
   });
 });
 
