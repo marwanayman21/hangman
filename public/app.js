@@ -62,7 +62,17 @@ const i18n = {
     modeWord: '📝 Word',
     modeSentence: '📜 Sentence',
     sentencePlaceholder: 'Type a sentence...',
-    modeLabel: 'Mode:'
+    modeLabel: 'Mode:',
+    publicRooms: '🌐 Public Rooms',
+    noRooms: 'No public rooms available',
+    public: '🌐 Public',
+    private: '🔒 Private',
+    kick: '❌ Kick',
+    leave: '🚪 Leave',
+    kickedMsg: 'You were kicked from the room.',
+    roomOwnership: 'You are now the room owner.',
+    join: 'Join',
+    players: 'Players'
   },
   ar: {
     title: 'المشنقة',
@@ -122,7 +132,17 @@ const i18n = {
     modeWord: '📝 كلمة',
     modeSentence: '📜 جملة',
     sentencePlaceholder: 'اكتب جملة...',
-    modeLabel: 'المود:'
+    modeLabel: 'المود:',
+    publicRooms: '🌐 غرف عامة',
+    noRooms: 'مفيش غرف عامة متاحة',
+    public: '🌐 عام',
+    private: '🔒 خاص',
+    kick: '❌ طرد',
+    leave: '🚪 خروج',
+    kickedMsg: 'صاحب الغرفة طردك.',
+    roomOwnership: 'أنت الآن صاحب الغرفة.',
+    join: 'دخول',
+    players: 'لاعبين'
   }
 };
 
@@ -189,6 +209,8 @@ let maxWrong = 6;
 let opponentName = '';
 let playerName = '';
 let chatOpen = false;
+let isOwner = false;
+let roomVisibility = 'public';
 
 // ─── DOM Refs ────────────────────────────────────────────────
 const $ = (sel) => document.querySelector(sel);
@@ -395,6 +417,56 @@ function onKeyPress(letter, btn) {
   btn.classList.add('used');
   socket.emit('guess-letter', { letter });
 }
+// ─── Room Browser ───────────────────────────────────────────
+function renderRoomList(rooms) {
+  const container = $('#room-list');
+  container.innerHTML = '';
+
+  if (rooms.length === 0) {
+    container.innerHTML = `<p class="no-rooms">${t('noRooms')}</p>`;
+    return;
+  }
+
+  rooms.forEach(r => {
+    const item = document.createElement('div');
+    item.className = 'room-item';
+
+    const info = document.createElement('div');
+    info.className = 'room-item-info';
+
+    const owner = document.createElement('span');
+    owner.className = 'room-item-owner';
+    owner.textContent = r.ownerName;
+
+    const details = document.createElement('div');
+    details.className = 'room-item-details';
+    details.innerHTML = `<span>${r.playerCount}/2 ${t('players')}</span> • <span>${r.lang === 'ar' ? 'العربية' : 'English'}</span>`;
+
+    info.appendChild(owner);
+    info.appendChild(details);
+
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-sm btn-primary';
+    btn.textContent = t('join');
+    btn.onclick = () => {
+      playerName = $('#player-name').value.trim();
+      if (!playerName) {
+        $('#home-error').textContent = t('nameMissing');
+        return;
+      }
+      $('#home-error').textContent = '';
+      socket.emit('join-room', { roomCode: r.code, playerName });
+    };
+
+    item.appendChild(info);
+    item.appendChild(btn);
+    container.appendChild(item);
+  });
+}
+
+socket.on('room-list', (rooms) => {
+  renderRoomList(rooms);
+});
 
 function updateSetterKeyboard(letter, isCorrect) {
   const setterKeys = $$('#setter-keyboard .key-btn');
@@ -474,25 +546,64 @@ $('#btn-create').addEventListener('click', () => {
   playerName = $('#player-name').value.trim();
   if (!playerName) { $('#home-error').textContent = t('nameMissing'); return; }
   $('#home-error').textContent = '';
-  socket.emit('create-room', { playerName, lang: currentLang });
+  // Find active visibility
+  const visBtn = document.querySelector('.vis-btn.active');
+  roomVisibility = visBtn ? visBtn.dataset.vis : 'public';
+  socket.emit('create-room', { playerName, lang: currentLang, visibility: roomVisibility });
+});
+
+$$('.vis-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    $$('.vis-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  });
 });
 
 $('#btn-join').addEventListener('click', () => {
   playerName = $('#player-name').value.trim();
-  const code = $('#room-code-input').value.trim();
+  const roomCode = $('#room-code-input').value.trim();
   if (!playerName) { $('#home-error').textContent = t('nameMissing'); return; }
-  if (!code) { $('#home-error').textContent = t('codeMissing'); return; }
+  if (!roomCode) { $('#home-error').textContent = t('codeMissing'); return; }
+
   $('#home-error').textContent = '';
-  socket.emit('join-room', { roomCode: code, playerName });
+  socket.emit('join-room', { roomCode, playerName });
 });
 
 $('#room-code-input').addEventListener('input', (e) => { e.target.value = e.target.value.toUpperCase(); });
 
 // ─── Screen: Lobby ───────────────────────────────────────────
-$('#btn-copy-code').addEventListener('click', () => {
-  if (currentRoomCode) {
-    navigator.clipboard.writeText(currentRoomCode).then(() => showToast(t('copied'), 'success'));
+function updateLobbyControls() {
+  if (isOwner) {
+    $('#btn-kick').classList.remove('hidden');
+    const visBtn = $('#btn-toggle-vis');
+    visBtn.classList.remove('hidden');
+    visBtn.textContent = roomVisibility === 'public' ? '🌐' : '🔒';
+    visBtn.title = roomVisibility === 'public' ? 'Make Private' : 'Make Public';
+  } else {
+    $('#btn-kick').classList.add('hidden');
+    $('#btn-toggle-vis').classList.add('hidden');
   }
+}
+
+$('#btn-copy-code').addEventListener('click', () => {
+  navigator.clipboard.writeText(currentRoomCode);
+  const btn = $('#btn-copy-code');
+  const original = btn.textContent;
+  btn.textContent = t('copied');
+  setTimeout(() => btn.textContent = original, 2000);
+});
+
+$('#btn-leave').addEventListener('click', () => {
+  socket.emit('leave-room');
+});
+
+$('#btn-kick').addEventListener('click', () => {
+  socket.emit('kick-player');
+});
+
+$('#btn-toggle-vis').addEventListener('click', () => {
+  const newVis = roomVisibility === 'public' ? 'private' : 'public';
+  socket.emit('toggle-visibility', { visibility: newVis });
 });
 
 // ─── Screen: Set Word ────────────────────────────────────────
@@ -552,20 +663,24 @@ $('#btn-left-home').addEventListener('click', () => { hideAllOverlays(); clearSe
 
 // ─── Socket Events ───────────────────────────────────────────
 
-socket.on('room-created', ({ code, role }) => {
+socket.on('room-created', ({ code, role, isOwner: ownerFlag, visibility }) => {
   currentRoomCode = code;
   currentRole = role;
+  isOwner = ownerFlag;
+  roomVisibility = visibility;
   saveSession(code, playerName, role);
   $('#lobby-code').textContent = code;
   $('#lobby-p1-name').textContent = playerName;
+  updateLobbyControls();
   showScreen('lobby');
 });
 
-socket.on('room-joined', ({ code, role, opponentName: oppName, lang, scores }) => {
+socket.on('room-joined', ({ code, role, opponentName: oppName, lang, scores, isOwner: ownerFlag }) => {
   currentRoomCode = code;
   currentRole = role;
   opponentName = oppName;
   currentLang = lang;
+  isOwner = ownerFlag;
   saveSession(code, playerName, role);
   applyI18n();
   if (scores) updateScoreDisplay(scores);
@@ -577,6 +692,7 @@ socket.on('room-joined', ({ code, role, opponentName: oppName, lang, scores }) =
   $('#lobby-p2').querySelector('.lp-avatar').textContent = '👤';
   $('#lobby-p2-status').textContent = t('connected');
   $('#lobby-p2-status').className = 'lp-status connected';
+  updateLobbyControls();
 });
 
 socket.on('opponent-joined', ({ opponentName: oppName, scores }) => {
@@ -719,8 +835,15 @@ socket.on('opponent-reconnected', ({ opponentName: name }) => {
 });
 
 socket.on('opponent-left', () => {
-  clearSession();
-  $('#opponent-left-overlay').classList.remove('hidden');
+  hideAllOverlays();
+  opponentName = '';
+  $('#lobby-p2-name').textContent = t('waitingDots');
+  $('#lobby-p2').querySelector('.lp-avatar').textContent = '⏳';
+  $('#lobby-p2-status').textContent = t('waiting');
+  $('#lobby-p2-status').className = 'lp-status waiting';
+  $('#lobby-title').textContent = t('lobbyWaiting');
+  showScreen('lobby');
+  showToast(t('opponentLeft'), 'error');
 });
 
 socket.on('error-msg', ({ msg }) => {
@@ -729,12 +852,50 @@ socket.on('error-msg', ({ msg }) => {
   $('#home-error').textContent = errorTexts[msg] || msg;
 });
 
+// ─── Room Management Events ────────────────────────────────────
+socket.on('left-room', () => {
+  clearSession();
+  hideAllOverlays();
+  showScreen('home');
+});
+
+socket.on('kicked', () => {
+  clearSession();
+  hideAllOverlays();
+  showScreen('home');
+  showToast(t('kickedMsg'), 'error');
+});
+
+socket.on('player-kicked', ({ kickedName }) => {
+  if (opponentName === kickedName) {
+    opponentName = '';
+    $('#lobby-p2-name').textContent = t('waitingDots');
+    $('#lobby-p2').querySelector('.lp-avatar').textContent = '⏳';
+    $('#lobby-p2-status').textContent = t('waiting');
+    $('#lobby-p2-status').className = 'lp-status waiting';
+    showToast(t('opponentLeft'), 'error');
+  }
+});
+
+socket.on('became-owner', () => {
+  isOwner = true;
+  updateLobbyControls();
+  showToast(t('roomOwnership'), 'success');
+});
+
+socket.on('visibility-changed', ({ visibility }) => {
+  roomVisibility = visibility;
+  updateLobbyControls();
+});
+
 // ─── Rejoin Handling ─────────────────────────────────────────
 socket.on('rejoin-success', (state) => {
   currentRoomCode = state.code;
   currentRole = state.role;
   opponentName = state.opponentName || '';
   currentLang = state.lang || 'en';
+  isOwner = state.isOwner || false;
+  roomVisibility = state.visibility || 'public';
   applyI18n();
 
   if (state.scores) updateScoreDisplay(state.scores);

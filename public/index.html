@@ -69,6 +69,10 @@
         <div class="card glass">
           <h2 data-i18n="createTitle">Create Room</h2>
           <p class="card-desc" data-i18n="createDesc">Start a new game and share the code</p>
+          <div class="visibility-toggle">
+            <button class="btn btn-sm vis-btn active" data-vis="public" data-i18n="public">🌐 Public</button>
+            <button class="btn btn-sm vis-btn" data-vis="private" data-i18n="private">🔒 Private</button>
+          </div>
           <button id="btn-create" class="btn btn-primary" data-i18n="createBtn">Create Room</button>
         </div>
 
@@ -77,6 +81,14 @@
           <p class="card-desc" data-i18n="joinDesc">Enter a room code to join a game</p>
           <input type="text" id="room-code-input" maxlength="4" placeholder="XXXX" autocomplete="off" class="code-input" />
           <button id="btn-join" class="btn btn-secondary" data-i18n="joinBtn">Join Room</button>
+        </div>
+      </div>
+
+      <!-- Room Browser -->
+      <div class="room-browser glass" id="room-browser">
+        <h2 data-i18n="publicRooms">🌐 Public Rooms</h2>
+        <div id="room-list" class="room-list">
+          <p class="no-rooms" data-i18n="noRooms">No public rooms available</p>
         </div>
       </div>
 
@@ -121,6 +133,12 @@
         </div>
 
         <p class="lobby-hint" data-i18n="lobbyHint">Share this code with your friend!</p>
+
+        <div class="lobby-actions">
+          <button id="btn-kick" class="btn btn-sm btn-danger hidden" data-i18n="kick">❌ Kick</button>
+          <button id="btn-leave" class="btn btn-sm btn-secondary" data-i18n="leave">🚪 Leave</button>
+          <button id="btn-toggle-vis" class="btn btn-sm hidden" id="btn-toggle-vis">🔒</button>
+        </div>
       </div>
     </section>
 

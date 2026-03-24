@@ -188,6 +188,36 @@ input[type="text"]::placeholder { color: var(--text-dim); }
   margin-bottom: 12px; user-select: all;
 }
 .lobby-hint { color: var(--text-dim); font-size: 0.8rem; margin-top: 16px; }
+.lobby-actions { display: flex; gap: 8px; justify-content: center; margin-top: 16px; }
+.btn-danger {
+  background: rgba(239, 68, 68, 0.15) !important; border: 1px solid var(--red) !important;
+  color: var(--red) !important;
+}
+.btn-danger:hover { background: rgba(239, 68, 68, 0.25) !important; }
+
+/* ── Room Browser ── */
+.room-browser {
+  max-width: 600px; margin: 24px auto 0; padding: 24px; text-align: center;
+}
+.room-browser h2 { font-size: 1.1rem; font-weight: 700; margin-bottom: 16px; }
+.room-list { display: flex; flex-direction: column; gap: 8px; }
+.no-rooms { color: var(--text-dim); font-size: 0.85rem; padding: 12px; }
+.room-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.03); border: 1px solid var(--border-glass);
+  transition: all 0.2s;
+}
+.room-item:hover { border-color: var(--accent); background: rgba(99,102,241,0.05); }
+.room-item-info { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.room-item-owner { font-weight: 700; font-size: 0.9rem; }
+.room-item-details { font-size: 0.75rem; color: var(--text-dim); display: flex; gap: 8px; }
+.room-item .btn { padding: 6px 16px; font-size: 0.78rem; }
+
+/* ── Visibility Toggle ── */
+.visibility-toggle { display: flex; gap: 8px; justify-content: center; margin-bottom: 12px; }
+.vis-btn { transition: all 0.2s; }
+.vis-btn.active { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: white; border-color: transparent; }
 
 /* ── Lobby Player Cards ── */
 .lobby-players { display: flex; align-items: center; gap: 16px; justify-content: center; margin-top: 24px; }
