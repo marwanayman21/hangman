@@ -149,9 +149,9 @@ const i18n = {
 // ─── Arabic & English Keyboards ──────────────────────────────
 const KEYS_EN = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 const KEYS_AR = [
-  'ا','ب','ت','ث','ج','ح','خ','د','ذ','ر','ز',
-  'س','ش','ص','ض','ط','ظ','ع','غ','ف','ق',
-  'ك','ل','م','ن','ه','و','ي','ة','ء'
+  'ا', 'ب', 'ت', 'ث', 'ج', 'ح', 'خ', 'د', 'ذ', 'ر', 'ز',
+  'س', 'ش', 'ص', 'ض', 'ط', 'ظ', 'ع', 'غ', 'ف', 'ق',
+  'ك', 'ل', 'م', 'ن', 'ه', 'و', 'ي', 'ة', 'ء'
 ];
 
 // ─── Arabic Normalization (client-side mirror of server) ─────
@@ -296,7 +296,7 @@ function renderGameOverScores(scores) {
 }
 
 // ─── Hangman Parts ───────────────────────────────────────────
-const HM_PARTS = ['hm-head','hm-body','hm-larm','hm-rarm','hm-lleg','hm-rleg'];
+const HM_PARTS = ['hm-head', 'hm-body', 'hm-larm', 'hm-rarm', 'hm-lleg', 'hm-rleg'];
 
 function resetHangman() {
   HM_PARTS.forEach(id => {
@@ -607,22 +607,22 @@ $('#btn-toggle-vis').addEventListener('click', () => {
 });
 
 // ─── Screen: Set Word ────────────────────────────────────────
-  $$('.mode-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      $$('.mode-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      gameMode = btn.dataset.mode;
-      // Update placeholder
-      const wordInput = $('#custom-word');
-      if (gameMode === 'sentence') {
-        wordInput.placeholder = t('sentencePlaceholder');
-      } else {
-        wordInput.placeholder = t('wordPlaceholder');
-      }
-    });
+$$('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    $$('.mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    gameMode = btn.dataset.mode;
+    // Update placeholder
+    const wordInput = $('#custom-word');
+    if (gameMode === 'sentence') {
+      wordInput.placeholder = t('sentencePlaceholder');
+    } else {
+      wordInput.placeholder = t('wordPlaceholder');
+    }
   });
+});
 
-  $$('.lang-btn').forEach(btn => {
+$$('.lang-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     $$('.lang-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
@@ -1005,6 +1005,11 @@ document.addEventListener('keydown', (e) => {
 
 // ─── Init ────────────────────────────────────────────────────
 applyI18n();
+
+// Keep Render free tier alive while tab is open (ping every 5 mins)
+setInterval(() => {
+  fetch('/keep-alive').catch(() => { });
+}, 300000);
 
 // Try to rejoin if we have a saved session
 const savedSession = getSession();

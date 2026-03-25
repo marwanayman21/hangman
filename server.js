@@ -11,6 +11,7 @@ const io = new Server(server, {
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
+app.get('/keep-alive', (req, res) => res.send('OK'));
 
 // ─── Room & Game State ───────────────────────────────────────────────
 const rooms = new Map();
