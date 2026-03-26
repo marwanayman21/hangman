@@ -19,17 +19,7 @@
         <span class="logo-text" data-i18n="title">Hangman</span>
       </div>
       <!-- Score display in header during game -->
-      <div id="header-scores" class="header-scores hidden">
-        <div class="score-pill">
-          <span id="score-p1-name" class="score-name">P1</span>
-          <span id="score-p1-val" class="score-val">0</span>
-        </div>
-        <span class="score-divider">—</span>
-        <div class="score-pill">
-          <span id="score-p2-name" class="score-name">P2</span>
-          <span id="score-p2-val" class="score-val">0</span>
-        </div>
-      </div>
+      <div id="header-scores" class="header-scores hidden"></div>
       <button id="lang-toggle" class="btn-icon" title="Switch Language">
         <span id="lang-label">عربي</span>
       </button>
@@ -73,6 +63,14 @@
             <button class="btn btn-sm vis-btn active" data-vis="public" data-i18n="public">🌐 Public</button>
             <button class="btn btn-sm vis-btn" data-vis="private" data-i18n="private">🔒 Private</button>
           </div>
+          <div class="max-players-select" style="margin-bottom: 12px;">
+            <label for="max-players" style="font-size:0.85rem; color: var(--text-secondary); margin-inline-end: 8px;" data-i18n="maxPlayersLabel">Players:</label>
+            <select id="max-players" style="background: var(--bg-glass); border: 1px solid var(--border-glass); color: white; padding: 4px; border-radius: 4px;">
+              <option value="2">2 (1v1)</option>
+              <option value="3">3 (1v2 Race)</option>
+              <option value="4">4 (2v2 Team)</option>
+            </select>
+          </div>
           <button id="btn-create" class="btn btn-primary" data-i18n="createBtn">Create Room</button>
         </div>
 
@@ -112,32 +110,17 @@
           <button id="btn-copy-code" class="btn btn-sm" data-i18n="copyCode">Copy</button>
         </div>
 
-        <div class="lobby-players">
-          <div class="lobby-player-card glass" id="lobby-p1">
-            <div class="lp-avatar">👤</div>
-            <div class="lp-info">
-              <span class="lp-name" id="lobby-p1-name">You</span>
-              <span class="lp-status connected" data-i18n="connected">Connected</span>
-            </div>
-          </div>
-
-          <div class="lobby-vs">VS</div>
-
-          <div class="lobby-player-card glass" id="lobby-p2">
-            <div class="lp-avatar">❓</div>
-            <div class="lp-info">
-              <span class="lp-name" id="lobby-p2-name" data-i18n="waitingDots">...</span>
-              <span class="lp-status waiting" id="lobby-p2-status" data-i18n="waiting">Waiting</span>
-            </div>
-          </div>
+        <div class="lobby-players" id="lobby-players-list">
+          <!-- Dynamic Player List populated by JS -->
         </div>
 
         <p class="lobby-hint" data-i18n="lobbyHint">Share this code with your friend!</p>
 
         <div class="lobby-actions">
+          <button id="btn-start-game" class="btn btn-sm btn-primary hidden" data-i18n="startGame">🚀 Start Game</button>
           <button id="btn-kick" class="btn btn-sm btn-danger hidden" data-i18n="kick">❌ Kick</button>
           <button id="btn-leave" class="btn btn-sm btn-secondary" data-i18n="leave">🚪 Leave</button>
-          <button id="btn-toggle-vis" class="btn btn-sm hidden" id="btn-toggle-vis">🔒</button>
+          <button id="btn-toggle-vis" class="btn btn-sm hidden">🔒</button>
         </div>
       </div>
     </section>
@@ -211,6 +194,9 @@
 
           <!-- Keyboard (for guesser) -->
           <div id="keyboard" class="keyboard"></div>
+
+          <!-- Progress Bars for Multi-Guesser HUD -->
+          <div id="progress-bars-container" class="progress-bars-container"></div>
 
           <!-- Setter watching view with keyboard feedback -->
           <div id="setter-view" class="setter-view hidden">

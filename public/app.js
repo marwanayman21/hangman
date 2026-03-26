@@ -25,6 +25,8 @@ const i18n = {
     wordPlaceholder: 'Type a word...',
     hintPlaceholder: 'Add a hint (optional)',
     setWordBtn: 'Set Word',
+    startGame: '🚀 Start Game',
+    maxPlayersLabel: 'Players:',
     or: 'or',
     randomBtn: 'Random Word',
     hintLabel: 'Hint:',
@@ -70,9 +72,12 @@ const i18n = {
     kick: '❌ Kick',
     leave: '🚪 Leave',
     kickedMsg: 'You were kicked from the room.',
-    roomOwnership: 'You are now the room owner.',
     join: 'Join',
-    players: 'Players'
+    players: 'Players',
+    teamA: '🔴 Team A',
+    teamB: '🔵 Team B',
+    unassigned: 'Unassigned',
+    waitingOtherSetter: 'Waiting for the other Setter to choose a word...'
   },
   ar: {
     title: 'المشنقة',
@@ -95,6 +100,8 @@ const i18n = {
     wordPlaceholder: 'اكتب كلمة...',
     hintPlaceholder: 'أضف تلميح (اختياري)',
     setWordBtn: 'تأكيد الكلمة',
+    startGame: '🚀 ابدأ اللعب',
+    maxPlayersLabel: 'اللاعبين:',
     or: 'أو',
     randomBtn: 'كلمة عشوائية',
     hintLabel: 'تلميح:',
@@ -140,9 +147,12 @@ const i18n = {
     kick: '❌ طرد',
     leave: '🚪 خروج',
     kickedMsg: 'صاحب الغرفة طردك.',
-    roomOwnership: 'أنت الآن صاحب الغرفة.',
     join: 'دخول',
-    players: 'لاعبين'
+    players: 'لاعبين',
+    teamA: '🔴 الفريق أ',
+    teamB: '🔵 الفريق ب',
+    unassigned: 'غير منضم',
+    waitingOtherSetter: 'في انتظار الفريق التاني يختار كلمتهم...'
   }
 };
 
@@ -211,6 +221,7 @@ let playerName = '';
 let chatOpen = false;
 let isOwner = false;
 let roomVisibility = 'public';
+let lobbyPlayers = [];
 
 // ─── DOM Refs ────────────────────────────────────────────────
 const $ = (sel) => document.querySelector(sel);
@@ -276,11 +287,21 @@ function hideAllOverlays() {
 // ─── Scores ──────────────────────────────────────────────────
 function updateScoreDisplay(scores) {
   if (!scores || scores.length < 2) return;
-  $('#score-p1-name').textContent = scores[0].name;
-  $('#score-p1-val').textContent = scores[0].score;
-  $('#score-p2-name').textContent = scores[1].name;
-  $('#score-p2-val').textContent = scores[1].score;
-  $('#header-scores').classList.remove('hidden');
+  const container = $('#header-scores');
+  container.innerHTML = '';
+  scores.forEach((s, idx) => {
+    if (idx > 0) {
+      const divider = document.createElement('span');
+      divider.className = 'score-divider';
+      divider.textContent = '—';
+      container.appendChild(divider);
+    }
+    const pill = document.createElement('div');
+    pill.className = 'score-pill';
+    pill.innerHTML = `<span class="score-name">${s.name}</span><span class="score-val">${s.score}</span>`;
+    container.appendChild(pill);
+  });
+  container.classList.remove('hidden');
 }
 
 function renderGameOverScores(scores) {
@@ -440,7 +461,7 @@ function renderRoomList(rooms) {
 
     const details = document.createElement('div');
     details.className = 'room-item-details';
-    details.innerHTML = `<span>${r.playerCount}/2 ${t('players')}</span> • <span>${r.lang === 'ar' ? 'العربية' : 'English'}</span>`;
+    details.innerHTML = `<span>${r.playerCount}/${r.maxPlayers} ${t('players')}</span> • <span>${r.lang === 'ar' ? 'العربية' : 'English'}</span>`;
 
     info.appendChild(owner);
     info.appendChild(details);
@@ -549,7 +570,8 @@ $('#btn-create').addEventListener('click', () => {
   // Find active visibility
   const visBtn = document.querySelector('.vis-btn.active');
   roomVisibility = visBtn ? visBtn.dataset.vis : 'public';
-  socket.emit('create-room', { playerName, lang: currentLang, visibility: roomVisibility });
+  const maxPlayers = $('#max-players').value;
+  socket.emit('create-room', { playerName, lang: currentLang, visibility: roomVisibility, maxPlayers });
 });
 
 $$('.vis-btn').forEach(btn => {
@@ -572,18 +594,116 @@ $('#btn-join').addEventListener('click', () => {
 $('#room-code-input').addEventListener('input', (e) => { e.target.value = e.target.value.toUpperCase(); });
 
 // ─── Screen: Lobby ───────────────────────────────────────────
+function renderLobbyPlayers(players) {
+  lobbyPlayers = players;
+  const container = $('#lobby-players-list');
+  if (!container) return;
+  container.innerHTML = '';
+  
+  const isTeamMode = players.some(p => p.team);
+  
+  if (isTeamMode) {
+     const teamA = players.filter(p => p.team === 'A');
+     const teamB = players.filter(p => p.team === 'B');
+     const unassigned = players.filter(p => !p.team);
+
+     const renderTeam = (teamName, members, color) => {
+        if (members.length === 0) return;
+        const header = document.createElement('div');
+        header.className = `team-header team-${color}`;
+        header.textContent = teamName;
+        container.appendChild(header);
+
+        members.forEach(p => {
+          const card = document.createElement('div');
+          card.className = `lobby-player-card glass team-card-${color}`;
+          
+          let kickBtnHTML = '';
+          if (isOwner && p.name !== playerName) {
+             kickBtnHTML = `<button class="btn-kick-inline" data-name="${p.name}" title="Kick ${p.name}">❌</button>`;
+          }
+          
+          card.innerHTML = `
+            <div class="lp-avatar">${p.role?.startsWith('setter') ? '👑' : '👤'}</div>
+            <div class="lp-info">
+              <span class="lp-name">${p.name} ${p.name === playerName ? '(You)' : ''}</span>
+              <span class="lp-status ${p.connected ? 'connected' : 'waiting'}">${p.connected ? t('connected') : t('waiting')}</span>
+            </div>
+            ${kickBtnHTML}
+          `;
+          container.appendChild(card);
+        });
+     };
+
+     renderTeam(t('teamA'), teamA, 'red');
+     
+     if (teamB.length > 0) {
+        const vs = document.createElement('div');
+        vs.className = 'lobby-vs';
+        vs.textContent = 'VS';
+        container.appendChild(vs);
+        renderTeam(t('teamB'), teamB, 'blue');
+     }
+     
+     if (unassigned.length > 0) {
+        renderTeam(t('unassigned'), unassigned, 'gray');
+     }
+  } else {
+    players.forEach((p, idx) => {
+      if (idx > 0) {
+        const vs = document.createElement('div');
+        vs.className = 'lobby-vs';
+        vs.textContent = 'VS';
+        container.appendChild(vs);
+      }
+      const card = document.createElement('div');
+      card.className = 'lobby-player-card glass';
+      
+      let kickBtnHTML = '';
+      if (isOwner && p.name !== playerName) {
+         kickBtnHTML = `<button class="btn-kick-inline" data-name="${p.name}" title="Kick ${p.name}">❌</button>`;
+      }
+      
+      card.innerHTML = `
+        <div class="lp-avatar">${p.role === 'setter' ? '👑' : '👤'}</div>
+        <div class="lp-info">
+          <span class="lp-name">${p.name} ${p.name === playerName ? '(You)' : ''}</span>
+          <span class="lp-status ${p.connected ? 'connected' : 'waiting'}">${p.connected ? t('connected') : t('waiting')}</span>
+        </div>
+        ${kickBtnHTML}
+      `;
+      container.appendChild(card);
+    });
+  }
+}
+
 function updateLobbyControls() {
   if (isOwner) {
-    $('#btn-kick').classList.remove('hidden');
     const visBtn = $('#btn-toggle-vis');
     visBtn.classList.remove('hidden');
     visBtn.textContent = roomVisibility === 'public' ? '🌐' : '🔒';
     visBtn.title = roomVisibility === 'public' ? 'Make Private' : 'Make Public';
+    
+    const startBtn = $('#btn-start-game');
+    if (startBtn) {
+       startBtn.classList.remove('hidden');
+       if (lobbyPlayers.length > 1) {
+          startBtn.disabled = false;
+          startBtn.style.opacity = '1';
+       } else {
+          startBtn.disabled = true;
+          startBtn.style.opacity = '0.5';
+       }
+    }
   } else {
-    $('#btn-kick').classList.add('hidden');
     $('#btn-toggle-vis').classList.add('hidden');
+    if ($('#btn-start-game')) $('#btn-start-game').classList.add('hidden');
   }
 }
+
+$('#btn-start-game')?.addEventListener('click', () => {
+   if (lobbyPlayers.length > 1) socket.emit('start-game');
+});
 
 $('#btn-copy-code').addEventListener('click', () => {
   navigator.clipboard.writeText(currentRoomCode);
@@ -597,8 +717,10 @@ $('#btn-leave').addEventListener('click', () => {
   socket.emit('leave-room');
 });
 
-$('#btn-kick').addEventListener('click', () => {
-  socket.emit('kick-player');
+$('#lobby-players-list').addEventListener('click', (e) => {
+   if (e.target.classList.contains('btn-kick-inline')) {
+       socket.emit('kick-player', { targetPlayerName: e.target.dataset.name });
+   }
 });
 
 $('#btn-toggle-vis').addEventListener('click', () => {
@@ -663,22 +785,21 @@ $('#btn-left-home').addEventListener('click', () => { hideAllOverlays(); clearSe
 
 // ─── Socket Events ───────────────────────────────────────────
 
-socket.on('room-created', ({ code, role, isOwner: ownerFlag, visibility }) => {
+socket.on('room-created', ({ code, role, isOwner: ownerFlag, visibility, players }) => {
   currentRoomCode = code;
   currentRole = role;
   isOwner = ownerFlag;
   roomVisibility = visibility;
   saveSession(code, playerName, role);
   $('#lobby-code').textContent = code;
-  $('#lobby-p1-name').textContent = playerName;
+  renderLobbyPlayers(players);
   updateLobbyControls();
   showScreen('lobby');
 });
 
-socket.on('room-joined', ({ code, role, opponentName: oppName, lang, scores, isOwner: ownerFlag }) => {
+socket.on('room-joined', ({ code, role, players, lang, scores, isOwner: ownerFlag }) => {
   currentRoomCode = code;
   currentRole = role;
-  opponentName = oppName;
   currentLang = lang;
   isOwner = ownerFlag;
   saveSession(code, playerName, role);
@@ -686,13 +807,26 @@ socket.on('room-joined', ({ code, role, opponentName: oppName, lang, scores, isO
   if (scores) updateScoreDisplay(scores);
   showScreen('lobby');
   $('#lobby-code').textContent = code;
-  $('#lobby-title').textContent = t('lobbyWaiting');
-  $('#lobby-p1-name').textContent = playerName;
-  $('#lobby-p2-name').textContent = oppName;
-  $('#lobby-p2').querySelector('.lp-avatar').textContent = '👤';
-  $('#lobby-p2-status').textContent = t('connected');
-  $('#lobby-p2-status').className = 'lp-status connected';
+  if (setters && setters.length > 0) {
+      $('#lobby-title').textContent = t('lobbyWaiting').replace('opponent', setters.join(' & '));
+  } else {
+      $('#lobby-title').textContent = t('lobbyWaiting');
+  }
+  renderLobbyPlayers(players);
   updateLobbyControls();
+});
+
+socket.on('lobby-players-updated', (players) => {
+   renderLobbyPlayers(players);
+   updateLobbyControls();
+});
+
+socket.on('game-starting-soon', ({ setters }) => {
+  if (setters && setters.length > 0) {
+      $('#lobby-title').textContent = t('lobbyWaiting').replace('opponent', setters.join(' & '));
+  } else {
+      $('#lobby-title').textContent = t('waitingDots');
+  }
 });
 
 socket.on('opponent-joined', ({ opponentName: oppName, scores }) => {
@@ -716,7 +850,13 @@ socket.on('set-word-prompt', ({ roundNumber }) => {
   showScreen('setWord');
 });
 
-socket.on('game-started', ({ maskedWord, hint, lang, roundNumber, mode, maxWrong: mw }) => {
+socket.on('waiting-for-other-setter', () => {
+  $('#btn-set-word').disabled = true;
+  $('#btn-random-word').disabled = true;
+  $('#btn-set-word').textContent = t('waitingOtherSetter');
+});
+
+socket.on('game-started', ({ maskedWord, hint, lang, roundNumber, mode, maxWrong: mw, guessers, playerNames }) => {
   gameLang = lang;
   gameMode = mode || 'word';
   maxWrong = mw || 6;
@@ -731,12 +871,19 @@ socket.on('game-started', ({ maskedWord, hint, lang, roundNumber, mode, maxWrong
   $('#setter-view').classList.add('hidden');
   $('#keyboard').classList.remove('hidden');
 
+  if (guessers && Object.keys(guessers).length > 1) {
+      renderProgressBars(guessers, playerNames);
+  } else {
+      const container = $('#progress-bars-container');
+      if (container) container.innerHTML = '';
+  }
+
   resetHangman();
   renderWord(maskedWord);
   renderKeyboard(lang);
 });
 
-socket.on('game-started-setter', ({ word, hint, lang, roundNumber, maskedWord, mode, maxWrong: mw }) => {
+socket.on('game-started-setter', ({ word, hint, lang, roundNumber, maskedWord, mode, maxWrong: mw, guessers, playerNames }) => {
   gameLang = lang;
   gameMode = mode || 'word';
   maxWrong = mw || 6;
@@ -755,9 +902,51 @@ socket.on('game-started-setter', ({ word, hint, lang, roundNumber, maskedWord, m
   resetHangman();
   renderWord(maskedWord);
   renderKeyboard(lang, '#setter-keyboard');
+
+  renderProgressBars(guessers, playerNames);
 });
 
-socket.on('guess-result', ({ letter, isCorrect, maskedWord, wrongGuesses, guessedLetters, gameOver, winner, word, scores }) => {
+function renderProgressBars(guessers, playerNames) {
+  const container = $('#progress-bars-container');
+  if (!container) return;
+  container.innerHTML = '';
+  if (!guessers) return;
+  
+  const isSetter = currentRole === 'setter' || currentRole.startsWith('setter');
+
+  Object.keys(guessers).forEach(gid => {
+      // If I am a guesser, I only want to see the OTHER guessers
+      if (!isSetter && gid === socket.id) return;
+
+      const pd = guessers[gid];
+      const name = playerNames[gid] || 'Player';
+      const card = document.createElement('div');
+      card.className = `guesser-progress-card ${pd.status}`;
+      card.id = `guesser-prog-${gid}`;
+      
+      const pct = Math.min((pd.wrongGuesses / maxWrong) * 100, 100);
+      const correctStr = pd.correctCount !== undefined ? ` | Hits: ${pd.correctCount}` : '';
+      
+      let letterListHTML = '';
+      if (isSetter && pd.guessedLetters && pd.guessedLetters.length > 0) {
+          letterListHTML = `<div class="guesser-letters-list">Guesses: ${pd.guessedLetters.join(', ')}</div>`;
+      }
+
+      card.innerHTML = `
+         <div class="guesser-name-row">
+           <span>${name}</span>
+           <span class="guesser-status" id="g-status-${gid}">Errors: ${pd.wrongGuesses}/${maxWrong}${correctStr}</span>
+         </div>
+         <div class="progress-bar-wrap">
+           <div class="progress-bar-fill" id="g-fill-${gid}" style="width: ${pct}%"></div>
+         </div>
+         ${letterListHTML}
+      `;
+      container.appendChild(card);
+  });
+}
+
+socket.on('guess-result', ({ letter, isCorrect, maskedWord, wrongGuesses, guessedLetters, gameOver, winner, word, scores, teamMode }) => {
   updateWord(maskedWord);
 
   // Update guesser keyboard
@@ -773,7 +962,6 @@ socket.on('guess-result', ({ letter, isCorrect, maskedWord, wrongGuesses, guesse
   $('#lives-count').textContent = lives;
 
   // Show hangman parts proportionally based on maxWrong
-  // 6 parts, threshold = (partIndex + 1) * maxWrong / 6
   for (let i = 0; i < 6; i++) {
     const threshold = Math.ceil((i + 1) * maxWrong / 6);
     if (wrongGuesses >= threshold) {
@@ -788,35 +976,107 @@ socket.on('guess-result', ({ letter, isCorrect, maskedWord, wrongGuesses, guesse
 
   if (gameOver) {
     setTimeout(() => {
-      if (word) revealFullWord(word);
-      const overlay = $('#game-over-overlay');
-      overlay.classList.remove('hidden');
-      const isGuesserWin = winner === 'guesser';
-
-      if (currentRole === 'guesser') {
-        $('#go-title').textContent = isGuesserWin ? t('youWin') : t('youLose');
-        $('#go-icon').textContent = isGuesserWin ? '🎉' : '😵';
-      } else {
-        $('#go-title').textContent = isGuesserWin ? t('guesserWon') : t('setterWon');
-        $('#go-icon').textContent = isGuesserWin ? '😬' : '🎉';
+      if (word && !teamMode) revealFullWord(word);
+      if (word && teamMode) {
+          $('#word-display').innerHTML = word.split('').map(char => {
+             if (char === ' ') return '<div class="space"></div>';
+             return `<div class="letter-box correct">${char}</div>`;
+          }).join('');
       }
 
-      $('#go-word').innerHTML = `${t('theWord')} <strong>${word}</strong>`;
+      const overlay = $('#game-over-overlay');
+      overlay.classList.remove('hidden');
+
+      if (teamMode) {
+          const isMyTeamWinner = currentRole.includes('A') && winner === 'Team A' || currentRole.includes('B') && winner === 'Team B';
+          $('#go-title').textContent = isMyTeamWinner ? t('youWin') : t('youLose');
+          $('#go-icon').textContent = isMyTeamWinner ? '🎉' : '😵';
+          $('#go-word').innerHTML = `<div style="font-size: 1.5rem; margin-bottom: 8px;">${winner} Wins!</div><div style="font-size: 0.9rem; color: #aaa">Word: ${word}</div>`;
+      } else {
+          const isGuesserWin = winner === 'guesser';
+          if (currentRole === 'guesser') {
+            $('#go-title').textContent = isGuesserWin ? t('youWin') : t('youLose');
+            $('#go-icon').textContent = isGuesserWin ? '🎉' : '😵';
+          } else {
+            $('#go-title').textContent = isGuesserWin ? t('guesserWon') : t('setterWon');
+            $('#go-icon').textContent = isGuesserWin ? '😬' : '🎉';
+          }
+          $('#go-word').innerHTML = `${t('theWord')} <strong>${word}</strong>`;
+      }
       renderGameOverScores(scores);
     }, 600);
   }
 });
 
-socket.on('new-round', ({ role, scores, roundNumber }) => {
+socket.on('guesser-progress', ({ guesserId, wrongGuesses, correctCount, guessedLetters, status, gameOver, winner, scores }) => {
+  if (scores) updateScoreDisplay(scores);
+  const card = $(`#guesser-prog-${guesserId}`);
+  if (card) {
+      card.className = `guesser-progress-card ${status}`;
+      const pct = Math.min((wrongGuesses / maxWrong) * 100, 100);
+      $(`#g-fill-${guesserId}`).style.width = `${pct}%`;
+      
+      const correctText = correctCount !== undefined ? ` | Hits: ${correctCount}` : '';
+      $(`#g-status-${guesserId}`).textContent = `Errors: ${wrongGuesses}/${maxWrong}${correctText}`;
+
+      // Update letters list if it exists (for setter)
+      const lettersEl = card.querySelector('.guesser-letters-list');
+      if (lettersEl && guessedLetters) {
+          lettersEl.textContent = `Guesses: ${guessedLetters.join(', ')}`;
+      }
+  }
+});
+
+socket.on('game-over-broadcast', ({ winner, word, scores, teamMode }) => {
+    if (scores) updateScoreDisplay(scores);
+    setTimeout(() => {
+      if (word && !teamMode) revealFullWord(word);
+      if (word && teamMode) {
+          $('#word-display').innerHTML = word.split('').map(char => {
+             if (char === ' ') return '<div class="space"></div>';
+             return `<div class="letter-box correct">${char}</div>`;
+          }).join('');
+      }
+      
+      const overlay = $('#game-over-overlay');
+      overlay.classList.remove('hidden');
+
+      if (teamMode) {
+          const isMyTeamWinner = currentRole.includes('A') && winner === 'Team A' || currentRole.includes('B') && winner === 'Team B';
+          $('#go-title').textContent = isMyTeamWinner ? t('youWin') : t('youLose');
+          $('#go-icon').textContent = isMyTeamWinner ? '🎉' : '😵';
+          $('#go-word').innerHTML = `<div style="font-size: 1.5rem; margin-bottom: 8px;">${winner} Wins!</div><div style="font-size: 0.9rem; color: #aaa">Word: ${word}</div>`;
+      } else {
+          const isGuesserWin = winner === 'guesser';
+          if (currentRole === 'guesser') {
+            $('#go-title').textContent = isGuesserWin ? t('youWin') : t('youLose');
+            $('#go-icon').textContent = isGuesserWin ? '🎉' : '😵';
+          } else {
+            $('#go-title').textContent = isGuesserWin ? t('guesserWon') : t('setterWon');
+            $('#go-icon').textContent = isGuesserWin ? '😬' : '🎉';
+          }
+          $('#go-word').innerHTML = `${t('theWord')} <strong>${word}</strong>`;
+      }
+      renderGameOverScores(scores);
+    }, 600);
+});
+
+socket.on('new-round', ({ role, scores, roundNumber, setters }) => {
   currentRole = role;
   saveSession(currentRoomCode, playerName, role);
   hideAllOverlays();
   if (scores) updateScoreDisplay(scores);
-  if (role === 'setter') {
-    // will receive set-word-prompt
+  
+  if (role === 'setter' || role.startsWith('setter')) {
+      // Logic for setters is handled by set-word-prompt
   } else {
     showScreen('lobby');
-    $('#lobby-title').textContent = t('lobbyWaiting');
+    if (setters && setters.length > 0) {
+        $('#lobby-title').textContent = t('lobbyWaiting').replace('opponent', setters.join(' & '));
+        showToast(t('lobbyWaiting').replace('opponent', setters.join(' & ')), 'success');
+    } else {
+        $('#lobby-title').textContent = t('lobbyWaiting');
+    }
   }
 });
 
